@@ -1,0 +1,121 @@
+// src/App.jsx
+import logo from './logo.svg';
+import './App.css';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import './styles.css'; // import the single CSS file here
+
+// If using Redux:
+import { Provider } from 'react-redux';
+import store from './redux/store';  // if you have a store
+import { loginSuccess } from './redux/slides/authSlice';
+
+// Components
+import ProtectedRoute from './components/ProtectedRoute';
+
+// Pages
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import HomePage from './pages/HomePage';
+import DashboardPage from './pages/DashboardPage';
+import AdminUsersPage from './pages/AdminUserPage';
+import LocationPage from './pages/LocationPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import FridgeSettingsPage from './pages/FridgeSettingsPage';
+//import FridgePage from './pages/FridgePage';
+//import SummaryPage from './pages/SummaryPage';
+
+
+const savedToken = localStorage.getItem('token');
+const savedRole = localStorage.getItem('role');
+if (savedToken && savedRole) {
+  store.dispatch(loginSuccess({ token: savedToken, role: savedRole }));
+}
+
+function App() {
+  return (
+    // Single Router
+    <Provider store={store}>
+      <Router>
+        <Routes>
+
+          {/* Public */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+          {/* Protected */}
+          <Route 
+            path="/home" 
+            element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            } 
+          />
+          {/* If you need a plain / route, do something like: */}
+          <Route
+            path="/fridge-settings"
+            element={
+              <ProtectedRoute>
+                <FridgeSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Location routes */}
+          <Route
+            path="/locations/:locationId"
+            element={
+              <ProtectedRoute>
+                <LocationPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* <Route
+            path="/locations/:locationId/fridge/:fridgeId"
+            element={
+              <ProtectedRoute>
+                <FridgePage />
+              </ProtectedRoute>
+            }
+          /> */}
+          {/* <Route
+            path="/locations/:locationId/summary"
+            element={
+              <ProtectedRoute>
+                <SummaryPage />
+              </ProtectedRoute>
+            }
+          /> */}
+
+          {/* Admin only */}
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminUsersPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* 404 fallback */}
+          <Route path="*" element={<h2>404 Not Found</h2>} />
+        </Routes>
+      </Router>
+    </Provider>
+  );
+}
+
+export default App;
+

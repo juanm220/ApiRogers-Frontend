@@ -1,0 +1,23 @@
+my-mern-frontend/
+├── public/
+│   └── index.html
+├── src/
+│   ├── components/
+│   │   ├── Navbar.jsx
+│   │   ├── ProtectedRoute.jsx
+│   │   ├── ProductItem.jsx
+│   │   └── ...
+│   ├── pages/
+│   │   ├── LoginPage.jsx
+│   │   ├── RegisterPage.jsx
+│   │   ├── DashboardPage.jsx
+│   │   ├── LocationPage.jsx
+│   │   ├── FridgePage.jsx
+│   │   ├── SummaryPage.jsx
+│   │   └── AdminUsersPage.jsx
+│   ├── services/
+│   │   └── apiService.js
+│   ├── App.jsx
+│   ├── index.js
+│   └── routes.js (optional, if you want to separate React Router setup)
+└── package.json

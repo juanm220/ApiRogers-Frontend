@@ -1,0 +1,412 @@
+/****************************************** 
+  EARTHY, OLD-FASHIONED COLOR PALETTE
+******************************************/
+
+:root {
+    --main-bg: #f9f5f1;       /* Beige background */
+    --card-bg: #fffaf2;       /* Slightly off-white */
+    --accent: #4075e7;        /* Blue accent color */
+    --accent-hover: #4f45c0;  /* Darker brown hover */
+    --header-bg: #7fa5de;     /* "Tan" color */
+    --text-color: #000000;    /* Dark brown for text */
+    --border-color: #f8e7d6;
+  }
+  
+  /****************************************** 
+    GLOBAL RESET & FONT
+  ******************************************/
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--main-bg);
+    font-family: "Georgia", serif; /* old-fashioned vibe */
+    color: var(--text-color);
+  }
+  
+  /****************************************** 
+    CONTAINER
+  ******************************************/
+  .main-container {
+    max-width: 1200px;
+    margin: 0 auto; 
+    padding: 2rem;
+  }
+  
+  /****************************************** 
+    BASIC HEADINGS 
+  ******************************************/
+  h2, h4 {
+    margin-bottom: 1rem;
+    color: var(--accent);
+  }
+  h1, h3 {
+    color: var(--accent);
+    margin-top: 0;
+  }
+  
+  /****************************************** 
+    BUTTONS
+  ******************************************/
+  button {
+    cursor: pointer;
+    background-color: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    margin-right: 0.5rem;
+    font-size: 0.95rem;
+    transition: background-color 0.3s ease;
+  }
+  button:hover {
+    background-color: var(--accent-hover);
+  }
+  
+  /****************************************** 
+    NAVBAR (if you have one)
+  ******************************************/
+  .navbar {
+    display: flex;
+    align-items: center;
+    background-color: var(--header-bg);
+    padding: 0.75rem 1.5rem;
+  }
+  .navbar h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: var(--text-color);
+  }
+  .navbar .nav-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+  
+  /****************************************** 
+    TABLES
+  ******************************************/
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    background-color: var(--card-bg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    color: var(--text-color);
+  }
+  table thead {
+    background-color: var(--accent);
+    color: #fff;
+  }
+  table th, table td {
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+  }
+  table th {
+    text-align: left;
+    font-weight: bold;
+  }
+  table tr:hover {
+    background-color: #f2e8df; /* subtle highlight for old-fashioned feel */
+  }
+  
+  /****************************************** 
+    CARD SECTIONS
+  ******************************************/
+  .card {
+    background-color: var(--card-bg);
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  }
+  
+  /****************************************** 
+    STANDARD-PRODUCTS-PANEL
+  ******************************************/
+  .standard-products-panel {
+    background-color: var(--card-bg);
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  }
+  .standard-products-panel h3 {
+    margin-top: 0;
+    color: var(--accent);
+  }
+  .standard-products-panel ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .standard-products-panel li {
+    margin: 0.3rem 0;
+    padding: 0.3rem;
+    background-color: #f3ede7;
+    border-radius: 4px;
+  }
+
+  /* highligh row en over to drag */
+  .drag-over-row {
+    outline: 2px dashed #1e88e5; 
+    outline-offset: -4px;
+  }
+
+  
+  /****************************************** 
+    INPUT STYLING
+  ******************************************/
+  input[type="text"], input[type="number"], select {
+    padding: 0.4rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    margin-right: 0.5rem;
+    font-family: inherit;
+    color: var(--text-color);
+    background-color: #fff;
+  }
+  
+  /* Hide default spin buttons for numeric input if using <input type="number"> */
+  input[type=number]::-webkit-inner-spin-button, 
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  
+  /****************************************** 
+    CUSTOM NUMBER INPUT (PLUS/MINUS BUTTONS)
+  ******************************************/
+  .custom-number-input {
+    display: inline-flex;
+    align-items: center;
+  }
+  .custom-input-field {
+    width: 60px;
+    text-align: center;
+    font-size: 1rem;
+    border: 1px solid var(--border-color);
+    margin: 0 0.3rem;
+  }
+  .minus-btn, .plus-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 0;
+    border: none;
+    background-color: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+  }
+  .minus-btn:hover, .plus-btn:hover {
+    background-color: var(--accent-hover);
+  }
+  
+  /****************************************** 
+    FRIDGE ICON
+  ******************************************/
+  .fridge-icon {
+    display: inline-block;
+    width: 16px;
+    height: 24px;
+    background-color: rgba(37, 99, 235, 0.35);    /* earthy tone */
+    border: 2px solid #a58f72;   /* darker brown */
+    border-radius: 2px;
+    margin-right: 6px;
+    position: relative;
+  }
+  .fridge-icon::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: -4px;
+    width: 3px;
+    height: 8px;
+    background-color: #ef4444; /* handle color */
+  }
+  
+  /****************************************** 
+    UTILITY CLASSES
+  ******************************************/
+  .flex-row {
+    display: flex;
+    align-items: center;
+  }
+  .flex-row button {
+    margin-left: auto;
+  }
+  .location-title {
+    color: var(--accent);
+    margin-bottom: 1rem;
+  }
+  .hidden {
+    display: none;
+  }
+  
+  /******************************************
+  LOGIN – COOL (BLUE/RED/BLACK/WHITE)
+******************************************/
+
+/* Paleta fría solo para login */
+:root {
+  --login-bg-start: #0b1020;   /* negro azulado */
+  --login-bg-end:   #0f2856;   /* azul oscuro */
+  --login-card-bg:  #ffffff;   /* blanco */
+  --login-text:     #0e141b;   /* casi negro */
+  --login-muted:    #6b7280;   /* gris */
+  --login-blue:     #2563eb;   /* azul principal */
+  --login-blue-700: #1d4ed8;   /* hover */
+  --login-red:      #ef4444;   /* errores */
+  --login-ring:     rgba(37, 99, 235, 0.35); /* foco accesible */
+}
+
+/* Lienzo del login */
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(1200px 700px at 20% 10%, #12213f 0%, transparent 60%),
+              radial-gradient(900px 600px at 80% 90%, #1b2c55 0%, transparent 60%),
+              linear-gradient(160deg, var(--login-bg-start), var(--login-bg-end));
+}
+
+/* Tarjeta del login (mantiene tu clase existente) */
+.login-container {
+  width: 100%;
+  max-width: 420px;
+  background: var(--login-card-bg);
+  color: var(--login-text);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow:
+    0 10px 20px rgba(0,0,0,0.25),
+    0 1px 3px rgba(0,0,0,0.15);
+  border: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(2px);
+}
+
+/* Título */
+.login-container h2 {
+  margin: 0 0 12px 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #0b1324;
+}
+
+/* Subtexto / mensajes */
+.login-container p {
+  color: var(--login-muted);
+  margin-top: 12px;
+  font-size: 0.95rem;
+}
+
+/* Formulario */
+.form-group {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.form-group label {
+  font-size: 0.9rem;
+  color: #111827;
+  font-weight: 600;
+}
+
+/* Inputs */
+.form-group input[type="email"],
+.form-group input[type="password"],
+.form-group input[type="text"] {
+  width: 100%;
+  height: 46px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb; /* gris claro */
+  padding: 0 12px;
+  font-size: 0.98rem;
+  color: var(--login-text);
+  background: #ffffff;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 60ms ease;
+}
+
+.form-group input::placeholder {
+  color: #9aa3af;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--login-blue);
+  box-shadow: 0 0 0 4px var(--login-ring);
+}
+
+/* Botón principal */
+.login-btn {
+  width: 100%;
+  height: 46px;
+  border: none;
+  border-radius: 10px;
+  background: var(--login-blue);
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-top: 6px;
+  transition: transform 60ms ease, background-color 120ms ease, box-shadow 120ms ease;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.35);
+  cursor: pointer;
+}
+.login-btn:hover {
+  background: var(--login-blue-700);
+}
+.login-btn:active {
+  transform: translateY(1px);
+}
+
+/* Mensajes */
+.error-message {
+  margin-top: 10px;
+  color: #fff;
+  background: var(--login-red);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+}
+.success-message {
+  margin-top: 10px;
+  color: #065f46;
+  background: #d1fae5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+}
+
+/* Enlaces dentro del login */
+.login-container a {
+  color: var(--login-blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+.login-container a:hover {
+  text-decoration: underline;
+}
+
+/* Responsivo */
+@media (max-width: 520px) {
+  .login-container {
+    padding: 22px;
+    border-radius: 14px;
+  }
+  .login-container h2 {
+    font-size: 1.45rem;
+  }
+}
+@media (max-width: 380px) {
+  .auth-page {
+    padding: 16px;
+  }
+  .login-container {
+    padding: 18px;
+    border-radius: 12px;
+  }
+}
