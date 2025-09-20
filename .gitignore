@@ -1,0 +1,17 @@
+# dependencias
+node_modules/
+# builds
+dist/
+build/
+# pruebas
+coverage/
+# sistemas
+.DS_Store
+Thumbs.db
+# env
+.env
+.env.local
+.env.*.local
+# editor
+.vscode/
+.idea/
