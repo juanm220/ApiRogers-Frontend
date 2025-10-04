@@ -1,6 +1,7 @@
 // src/pages/FridgeSettingsPage.jsx
 import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
+import API from '../apiService';
 import NavBar from '../components/NavBar';
 import { useSelector } from 'react-redux';
 import '../styles.css';
@@ -28,10 +29,9 @@ function FridgeSettingsPage() {
 
   useEffect(() => {
     setLoading(true);
-    axios
-      .get('http://localhost:4000/api/config/standard-products', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    API
+      .get('/config/standard-products',
+      )
       .then((res) => {
         const list = res.data?.items ?? res.data?.data?.items ?? [];
         setItems(list);
@@ -65,11 +65,11 @@ function FridgeSettingsPage() {
     const t = setTimeout(async () => {
       try {
         // 1) Guardar nuevo estándar
-        const putRes = await axios.put(
-          'http://localhost:4000/api/config/standard-products',
+        const putRes = await API.put(
+          '/config/standard-products',
           { items: cleaned },
           {
-            headers: { Authorization: `Bearer ${token}` },
+            
             signal: controller.signal,
           }
         );
@@ -78,11 +78,11 @@ function FridgeSettingsPage() {
 
         // 2) Sincronizar NEVERAS automáticamente
         //    ✅ Enviar correctamente removeExtras en el BODY (o usa query si prefieres)
-        await axios.post(
-          'http://localhost:4000/api/config/sync-fridges',
+        await API.post(
+          '/config/sync-fridges',
           { removeExtras: removeExtrasRef.current },
           {
-            headers: { Authorization: `Bearer ${token}` },
+            
             signal: controller.signal,
           }
         );
@@ -105,10 +105,9 @@ function FridgeSettingsPage() {
     // helper: limpieza inmediata de un producto
   async function cleanupOne(name) {
     try {
-      await axios.post(
-        'http://localhost:4000/api/maintenance/cleanup-products',
-        { names: [name] },
-        { headers: { Authorization: `Bearer ${token}` } }
+      await API.post(
+        '/maintenance/cleanup-products',
+        { names: [name] }
       );
     } catch (e) {
       console.error('cleanupOne error', e);
@@ -130,24 +129,33 @@ function FridgeSettingsPage() {
     setDraftItems(copy);
   };
 
-const removeItem = async (index) => {
-  const name = draftItems[index];
-  const ok = window.confirm(
-    `¿Eliminar "${name}" del estándar y de TODAS las neveras? Esta acción quitará ese producto de cada nevera.`
-  );
-  if (!ok) return;
+  const removeItem = async (index) => {
+    const name = draftItems[index];
+    const ok = window.confirm(
+      `¿Eliminar "${name}" del estándar y de TODAS las neveras? Esta acción quitará ese producto de cada nevera.`
+    );
+    if (!ok) return;
 
-  // 1) Quitar de la UI
-  const copy = [...draftItems];
-  copy.splice(index, 1);
-  setDraftItems(copy);
+    // 1) Quitar de la UI
+    const copy = [...draftItems];
+    copy.splice(index, 1);
+    setDraftItems(copy);
 
-  // 2) Limpiar inmediatamente en backend
-  await cleanupOne(name);
+    // 2) Limpiar inmediatamente en backend (pull global por nombre)
+    await cleanupOne(name);
 
   // 3) Reset para que el próximo autosync solo reordene/complemente
   removeExtrasRef.current = false;
-};
+  // 3) Forzar que el próximo autosync QUITE extras no-estándar
+  removeExtrasRef.current = true;
+
+  // 4) (Opcional, más inmediato) dispara el sync ahora mismo:
+  try {
+    await API.post('/config/sync-fridges', { removeExtras: true });
+  } catch (e) {
+    console.error('sync after cleanup error', e);
+  }
+  };
 
   const removeExtrasRef = useRef(false);
 

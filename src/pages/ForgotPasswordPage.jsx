@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import API from '../apiService';
 import '../styles.css';
 
 export default function ForgotPasswordPage() {
@@ -10,7 +11,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setMsg('');
     try {
-      await axios.post('http://localhost:4000/api/users/forgot-password', { email });
+      await API.post('/users/forgot-password', { email });
       setMsg('Si el email existe, te enviaremos instrucciones. Revisa también la consola del servidor en modo dev.');
     } catch (err) {
       setMsg(err.response?.data?.message || 'Error al enviar la solicitud.');

@@ -1,6 +1,7 @@
 // src/pages/AdminUsersPage.jsx — con modal inline para editar usuarios
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import API from '../apiService';
 import { useSelector } from 'react-redux';
 import NavBar from '../components/NavBar';
 
@@ -65,7 +66,7 @@ function UserEditModal({ open, onClose, user, onSaved, token, locations }) {
 
     try {
       setSaving(true);
-      const r = await axios.put(`http://localhost:4000/api/users/${user._id}`,
+      const r = await API.put(`/users/${user._id}`,
         payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -147,11 +148,11 @@ export default function AdminUsersPage() {
   const token = useSelector((state) => state.auth.token);
 
   useEffect(() => {
-    axios.get('http://localhost:4000/api/users/all', { headers: { Authorization: `Bearer ${token}` } })
+    API.get('/users/all')
       .then(res => setUsers(Array.isArray(res.data) ? res.data : res.data?.data || []))
       .catch(err => console.error('Error fetching users:', err));
 
-    axios.get('http://localhost:4000/api/locations', { headers: { Authorization: `Bearer ${token}` } })
+    API.get('/locations')
       .then(res => setLocations(Array.isArray(res.data) ? res.data : res.data?.data || []))
       .catch(err => console.error('Error fetching locations:', err));
   }, [token]);
@@ -174,17 +175,15 @@ export default function AdminUsersPage() {
   const handleLocationToggle = async (userId, locationId, isAssigned) => {
     try {
       if (!isAssigned) {
-        await axios.put(
-          `http://localhost:4000/api/locations/${locationId}/assign-user`,
-          { userId },
-          { headers: { Authorization: `Bearer ${token}` } }
+        await API.put(
+          `/locations/${locationId}/assign-user`,
+          { userId }
         );
         setUsers(prev => prev.map(u => u._id === userId ? { ...u, locations: [...(u.locations||[]), locationId] } : u));
       } else {
-        await axios.put(
-          `http://localhost:4000/api/locations/${locationId}/remove-user`,
-          { userId },
-          { headers: { Authorization: `Bearer ${token}` } }
+        await API.put(
+          `/locations/${locationId}/remove-user`,
+          { userId }
         );
         setUsers(prev => prev.map(u => u._id === userId ? { ...u, locations: (u.locations||[]).filter(l => locIdStr(l) !== String(locationId)) } : u));
       }
@@ -196,7 +195,7 @@ export default function AdminUsersPage() {
   const handleDelete = async (userId) => {
     if (!window.confirm('¿Eliminar usuario?')) return;
     try {
-      await axios.delete(`http://localhost:4000/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
+      await API.delete(`/users/${userId}`);
       setUsers(prev => prev.filter(u => u._id !== userId));
     } catch (err) {
       console.error(err);

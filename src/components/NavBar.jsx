@@ -1,7 +1,7 @@
 // src/components/NavBar.jsx — polished navbar
 import React, { useEffect, useState } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import API from '../apiService';
 import '../styles.css';
 
 function NavBar() {
@@ -22,8 +22,8 @@ function NavBar() {
 
   useEffect(() => {
     if (!token) return;
-    axios
-      .get('http://localhost:4000/api/locations', { headers: { Authorization: `Bearer ${token}` } })
+    API
+      .get('/locations')
       .then((res) => setLocations(res.data))
       .catch((err) => console.error('Error fetching locations in NavBar:', err));
   }, [token]);

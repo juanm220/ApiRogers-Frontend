@@ -1,6 +1,7 @@
 // src/pages/RegisterPage.jsx
 import React, { useState } from 'react';
 import axios from 'axios';
+import API from '../apiService';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles.css';
 
@@ -17,7 +18,7 @@ function RegisterPage() {
     setOk('');
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:4000/api/users/register', form);
+      const res = await API.post('/users/register', form);
       setOk(res.data?.message || '¡Registro exitoso!');
       // redirige al login tras un pequeño respiro visual
       setTimeout(() => navigate('/login'), 700);

@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API from '../apiService';
 import { useSelector } from 'react-redux';
 import NavBar from '../components/NavBar';
 import NumberInput from '../components/NumberInput'; // Our custom component
@@ -50,9 +51,7 @@ function LocationPage() {
       setLoading(false);
       return;
     }
-    axios.get(`http://localhost:4000/api/locations/${locationId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    API.get(`/locations/${locationId}`)
     .then(res => {
       setLocationData(res.data);
       setNewName(res.data.name); // set for rename
@@ -79,10 +78,8 @@ function LocationPage() {
 
     // Cargar el orden estándar desde backend para ordenar la UI
   useEffect(() => {
-    axios
-      .get('http://localhost:4000/api/config/standard-products', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    API
+      .get('/config/standard-products')
       .then((res) => {
         const list = res.data?.items ?? res.data?.data?.items ?? [];
         setStandardOrder(list);
@@ -102,9 +99,8 @@ function LocationPage() {
     if (!newName.trim()) return alert('El nombre no puede estar vacío.');
     try {
       // Suppose we have a route: PUT /api/locations/:id for rename
-      const res = await axios.put(`http://localhost:4000/api/locations/${locationId}`, 
-        { name: newName },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const res = await API.put(`/locations/${locationId}`, 
+        { name: newName }
       );
       alert(res.data.message || 'Locación renombrada.');
       // Re-fetch or update local state
@@ -121,9 +117,7 @@ function LocationPage() {
     const confirmed = window.confirm('¿Seguro que deseas eliminar esta locación?');
     if (!confirmed) return;
     try {
-      await axios.delete(`http://localhost:4000/api/locations/${locationId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await API.delete(`/locations/${locationId}`);
       alert('Locación eliminada.');
       navigate('/home'); 
     } catch (err) {
@@ -140,17 +134,15 @@ const handleCreateFridge = async () => {
 
   try {
     // ✅ NO mandamos products: el backend inicializa con Config
-    const res = await axios.post(
-      `http://localhost:4000/api/locations/${locationId}/refrigerators`,
-      { name: newFridgeName },
-      { headers: { Authorization: `Bearer ${token}` } }
+    const res = await API.post(
+      `/locations/${locationId}/refrigerators`,
+      { name: newFridgeName }
     );
 
     alert(res.data.message || 'Refrigerador creado.');
     // Re-fetch location data
-    const refetch = await axios.get(
-      `http://localhost:4000/api/locations/${locationId}`,
-      { headers: { Authorization: `Bearer ${token}` } }
+    const refetch = await API.get(
+      `/locations/${locationId}`
     );
     setLocationData(refetch.data);
     setNewFridgeName('');
@@ -186,11 +178,9 @@ const handleCreateFridge = async () => {
         const quantitySTR = edits[pName];
         const quantity = parseInt(quantitySTR || "0", 10); // parse or fallback to 0
         // call updateProductInRefrigerator route
-        await axios.put(`http://localhost:4000/api/locations/${locationId}/refrigerators/${fridge._id}/products`, {
+        await API.put(`/locations/${locationId}/refrigerators/${fridge._id}/products`, {
           productName: pName,
           quantity: quantity
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
         });
       }
       alert(`Se guardaron los cambios para refrigerador: ${fridge.name}`);
@@ -202,14 +192,10 @@ const handleCreateFridge = async () => {
   const handleDeleteFridge = async (fridge) => {
     if (!window.confirm(`Are you sure you want to delete fridge ${fridge.name}?`)) return;
     try {
-      await axios.delete(`http://localhost:4000/api/locations/${locationId}/refrigerators/${fridge._id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await API.delete(`/locations/${locationId}/refrigerators/${fridge._id}`);
       alert('Fridge deleted!');
       // refetch location
-      const refetch = await axios.get(`http://localhost:4000/api/locations/${locationId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const refetch = await API.get(`/locations/${locationId}`);
       setLocationData(refetch.data);
     } catch (err) {
       console.error(err);
@@ -221,15 +207,12 @@ const handleCreateFridge = async () => {
     const newName = prompt('Enter new fridge name', fridge.name);
     if (!newName) return;
     try {
-      const res = await axios.put(`http://localhost:4000/api/locations/${locationId}/refrigerators/${fridge._id}`, 
-        { newName },
-        { headers: { Authorization: `Bearer ${token}` }}
+      const res = await API.put(`/locations/${locationId}/refrigerators/${fridge._id}`, 
+        { newName }
       );
       alert(res.data.message || 'Fridge renamed.');
       // refetch
-      const refetch = await axios.get(`http://localhost:4000/api/locations/${locationId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const refetch = await API.get(`/locations/${locationId}`);
       setLocationData(refetch.data);
     } catch (err) {
       console.error(err);

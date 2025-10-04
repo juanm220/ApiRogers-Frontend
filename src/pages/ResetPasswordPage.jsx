@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import axios from 'axios';
+import API from '../apiService';
 import { useSearchParams, Link } from 'react-router-dom';
 import '../styles.css';
 
@@ -19,7 +20,7 @@ export default function ResetPasswordPage() {
       return;
     }
     try {
-      await axios.post('http://localhost:4000/api/users/reset-password', { token, password });
+      await API.post('/users/reset-password', { token, password });
       setMsg('Contraseña actualizada. Ya puedes iniciar sesión.');
     } catch (err) {
       setMsg(err.response?.data?.message || 'Error al actualizar la contraseña.');

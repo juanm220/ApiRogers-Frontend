@@ -1,6 +1,7 @@
 // src/pages/HomePage.jsx
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import API from '../apiService';
 import NavBar from '../components/NavBar';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -18,9 +19,7 @@ function HomePage() {
 
   useEffect(() => {
     if (!token) return;
-    axios.get('http://localhost:4000/api/locations', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    API.get('/locations')
     .then(res => {
       setLocations(res.data);
     })
@@ -44,17 +43,14 @@ function HomePage() {
       return alert('El nombre de la locación es requerido.');
     }
     try {
-      const res = await axios.post('http://localhost:4000/api/locations',
-        { name: newLocName },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const res = await API.post('/locations',
+        { name: newLocName }
       );
       alert(res.data.message || 'Locación creada.');
       setNewLocName('');
 
       // Refresh the locations list
-      const refresh = await axios.get('http://localhost:4000/api/locations', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const refresh = await API.get('/locations');
       setLocations(refresh.data);
     } catch (error) {
       console.error('Error creating location:', error);

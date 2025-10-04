@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import API from '../apiService';
 import NavBar from '../components/NavBar';
 import { useSelector } from 'react-redux';
 import '../styles.css';
@@ -21,7 +22,7 @@ function DashboardPage() {
   const [analyticsByFridge, setAnalyticsByFridge] = useState({});
   const [loading, setLoading] = useState(true);
   const [errMsg, setErrMsg] = useState('');
-  const [breakdownSort, setBreakdownSort] = useState('critical');
+  const [breakdownSort, setBreakdownSort] = useState('order'); // estándar por defecto
 
   // --- Estado del mini-CRUD de capacidades por locación ---
   const [capItemsDraft, setCapItemsDraft] = useState([]); // [{ product, capacity }]
@@ -75,10 +76,7 @@ function DashboardPage() {
       if (endDate) params.set('end', endDate);
       const qs = params.toString() ? `?${params.toString()}` : '';
 
-      const r = await axios.get(`http://localhost:4000/api/dashboard/overview${qs}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal,
-      });
+      const r = await API.get(`/dashboard/overview${qs}`, { signal });
 
       const data = r.data?.data || {};
       setStdOrder(Array.isArray(data.stdOrder) ? data.stdOrder : []);
@@ -97,7 +95,7 @@ function DashboardPage() {
         setSelectedProduct(candidate || '');
       }
     } catch (err) {
-      if (axios.isCancel(err)) return;
+       if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || axios.isCancel(err)) return;
       console.error('Dashboard load error:', err);
       setErrMsg('Error loading dashboard');
       setLoading(false);
@@ -108,9 +106,7 @@ function DashboardPage() {
     async function loadLocOverrides() {
       if (!selectedLocId) { setCapItemsDraft([]); return; }
       try {
-        const r = await axios.get(`http://localhost:4000/api/capacity/location/${selectedLocId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const r = await API.get(`/capacity/location/${selectedLocId}`);
         const items = r.data?.data?.items || [];
         // normaliza a [{product, capacity}]
         setCapItemsDraft(items.map(it => ({ product: it.product, capacity: it.capacity })));
@@ -163,9 +159,7 @@ function DashboardPage() {
       if (endDate) params.set('end', endDate);
       if (suggestMethod) params.set('method', suggestMethod);
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const r = await axios.get(`http://localhost:4000/api/capacity/location/${selectedLocId}/suggest${qs}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const r = await API.get(`/capacity/location/${selectedLocId}/suggest${qs}`);
       setSuggestions(r.data?.data || { histMaxSum: {}, dailyPeakMax: {}, avgTop3Daily: {} });
     } catch (e) {
       console.error('fetchSuggestions error', e);
@@ -211,9 +205,9 @@ function DashboardPage() {
     if (!selectedLocId) return;
     setSavingCaps(true);
     try {
-      await axios.put(`http://localhost:4000/api/capacity/location/${selectedLocId}`, {
+      await API.put(`/capacity/location/${selectedLocId}`, {
         items: capItemsDraft
-      }, { headers: { Authorization: `Bearer ${token}` } });
+      });
       // refresca overview para que el breakdown use las capacidades nuevas
       await loadData(new AbortController().signal);
     } catch (e) {
@@ -719,7 +713,9 @@ function DashboardPage() {
                   return cap > 0 ? current / cap : NaN;
                 };
 
-                const ordered = keys.length ? sortBreakdownKeys([...keys], getRatio, orderIndex) : [];
+                const ordered = keys.length  ? [...keys].sort((a, b) => { const ia = orderIndex(a), ib = orderIndex(b);
+                    if (ia !== ib) return ia - ib;
+                        return String(a).localeCompare(String(b)); }): [];
                 const rows = ordered.map(prod => {
                   const current = Number(breakdown[prod] || 0);
                   const cap = getCap(prod);
@@ -843,13 +839,3 @@ function DashboardPage() {
 }
 
 export default DashboardPage;
-
-/* =============================================================
-   Opcional — agrega esto a styles.css para un look aún más "Excel"
-
-.table-excel { width:100%; border-collapse:collapse; background:#fff; }
-.table-excel th, .table-excel td { border:1px solid #e6e8ec; padding:6px 8px; }
-.table-excel thead th { background:#f7f8fa; font-weight:700; text-align:left; }
-.table-excel .num { text-align:right; font-variant-numeric:tabular-nums; }
-.table-excel tbody tr:nth-child(even) { background:#fcfdff; }
-*/
