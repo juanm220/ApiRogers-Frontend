@@ -378,3 +378,58 @@ table tbody tr:hover td { background: var(--row-hover); }
 @media (max-width: 520px) {
   .site-footer { padding: 20px 14px; }
 }
+
+/* ===== KeepAlive "chip" ===== */
+.robot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--brand-700);
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1;
+  box-shadow: var(--shadow);
+  transition: transform .06s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.robot-chip:hover { filter: brightness(0.98); border-color: var(--brand-600); }
+.robot-chip:active { transform: translateY(1px); }
+.robot-chip.is-loading { cursor: progress; opacity: 0.85; }
+
+.robot-chip--on { color: var(--ok); border-color: rgba(11,110,79,.35); }
+.robot-chip--off { color: var(--danger); border-color: rgba(239,68,68,.35); }
+
+.robot-dot {
+  width: 10px; height: 10px; border-radius: 9999px; display: inline-block;
+  box-shadow: 0 0 0 2px rgba(0,0,0,.04) inset;
+}
+.robot-dot.on  { background: var(--ok); }
+.robot-dot.off { background: var(--danger); }
+
+/* Cuenta regresiva dentro del chip (monoespaciado para dígitos parejos) */
+.robot-eta {
+  margin-left: 6px;
+  font-weight: 700;
+  opacity: .9;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .2px;
+}
+/* Chip radio para presets de horas */
+.chip-row { display:flex; gap:8px; flex-wrap:wrap; }
+.chip-radio {
+  border-radius: 9999px;
+  padding: .35rem .7rem;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+  font-weight: 700;
+}
+.chip-radio:hover { background: var(--row-hover); }
+.chip-radio.active {
+  background: var(--info-100);
+  border-color: var(--info);
+}

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import API from '../apiService';
+import KeepAliveToggle from './keepAliveToggle';
 import '../styles.css';
 
 function NavBar() {
@@ -78,13 +79,14 @@ function NavBar() {
             ))}
           </select>
         )}
+         <KeepAliveToggle />
 
         {token && (
           <button type="button" className="nav-btn nav-btn--danger" onClick={handleLogout}>
             Logout
           </button>
         )}
-      </nav>
+        </nav>
     </header>
   );
 }
