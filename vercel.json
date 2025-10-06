@@ -1,17 +1,18 @@
 {
-    "buildCommand": "npm run build",
-    "outputDirectory": "build",
-    "rewrites": [
-
+  "rewrites": [
     {
-        "source": "/api/:path*",
-        "destination": "https://apirogers-backend.onrender.com"
+      "source": "/api/cron",
+      "destination": "/api/cron"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://apirogers-backend.onrender.com/api/:path*"
     }
-    ], 
-    "crons": [{
-    "path": "/api/cron",
-    "schedule": "*/10 * * * *"
-  }]
-
+  ],
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "*/10 * * * *"
+    }
+  ]
 }
-
