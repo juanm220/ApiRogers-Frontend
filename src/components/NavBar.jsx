@@ -79,7 +79,7 @@ function NavBar() {
             ))}
           </select>
         )}
-         <KeepAliveToggle />
+        <KeepAliveToggle />
 
         {token && (
           <button type="button" className="nav-btn nav-btn--danger" onClick={handleLogout}>
@@ -90,7 +90,7 @@ function NavBar() {
     </header>
   );
 }
-
+  
 export default NavBar;
 
 
