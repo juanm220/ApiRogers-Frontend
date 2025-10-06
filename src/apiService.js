@@ -20,7 +20,7 @@ export function fetchBackend(path, options) {
 }
 
 // Uso: fetchBackend('/health');
-// Adjunta token si existe
+// Nota: no se adjunta ningún token automáticamente; agrega interceptores si los necesitas
 
 API.interceptors.response.use(
   r => r,

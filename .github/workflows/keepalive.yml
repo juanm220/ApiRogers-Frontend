@@ -1,0 +1,66 @@
+name: KeepAlive robot
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Comentario opcional para el disparo manual'
+        required: false
+  repository_dispatch:
+    types: [keepalive-toggle]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluar bandera de encendido
+        id: guard
+        run: |
+          event="${{ github.event_name }}"
+          enabled="${{ vars.KEEPALIVE_ENABLED }}"
+          normalized=$(printf '%s' "${enabled}" | tr '[:upper:]' '[:lower:]')
+
+          if [ "$event" = "schedule" ] && [ "$normalized" != "true" ]; then
+            echo "KeepAlive desactivado; se omite el ping programado." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "should_run=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_run=true" >>"$GITHUB_OUTPUT"
+          echo "Evento: $event" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$enabled" ]; then
+            echo "KEEPALIVE_ENABLED=$enabled" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Aviso de omisión
+        if: ${{ steps.guard.outputs.should_run != 'true' }}
+        run: echo "Run saltado porque KEEPALIVE_ENABLED != true"
+
+      - name: Ping al backend
+        if: ${{ steps.guard.outputs.should_run == 'true' }}
+        env:
+          URL: ${{ secrets.KEEPALIVE_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "KEEPALIVE_URL no está configurado" >&2
+            exit 1
+          fi
+
+          echo "Llamando a $URL"
+          body="$(mktemp)"
+          status=$(curl -sS -o "$body" -w '%{http_code}' "$URL")
+          tail -c 2000 "$body" | sed 's/.*/[respuesta] &/'
+          rm -f "$body"
+
+          if [ "$status" -ne 200 ]; then
+            echo "HTTP inesperado: $status" >&2
+            exit 1
+          fi
+
+          echo "Ping OK (HTTP $status)" | tee -a "$GITHUB_STEP_SUMMARY"

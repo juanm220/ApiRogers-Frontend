@@ -62,7 +62,7 @@ export default function KeepAliveModal({ open, onClose }) {
     setLoading(true);
     setErr('');
     try {
-      await API.post('/keepalive/start', { hours });
+      await API.post('/keepalive/toggle', { mode: 'on', hours });
       await fetchStatus();
     } catch (e) {
       console.error(e);
@@ -76,11 +76,25 @@ export default function KeepAliveModal({ open, onClose }) {
     setLoading(true);
     setErr('');
     try {
-      await API.post('/keepalive/stop');
+      await API.post('/keepalive/toggle', { mode: 'off' });
       await fetchStatus();
     } catch (e) {
       console.error(e);
       setErr('No se pudo apagar el robot.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function pingOnce() {
+    setLoading(true);
+    setErr('');
+    try {
+      await API.post('/keepalive/toggle', { mode: 'once' });
+      await fetchStatus();
+    } catch (e) {
+      console.error(e);
+      setErr('No se pudo hacer ping manual.');
     } finally {
       setLoading(false);
     }
@@ -158,7 +172,7 @@ export default function KeepAliveModal({ open, onClose }) {
               ))}
             </div>
             <p className="hint" style={{marginTop:8}}>
-              El cron hace ping (con autorización) cada ~5 min cuando el robot está ON.
+              Un workflow de GitHub Actions hace ping (con autorización) cada ~5 min cuando el robot está ON.
             </p>
           </div>
 
@@ -196,6 +210,15 @@ export default function KeepAliveModal({ open, onClose }) {
                   </button>
                 </>
               )}
+
+              <button
+                className="btn btn--ghost"
+                onClick={pingOnce}
+                disabled={loading}
+                title="Hacer ping inmediato sin cambiar el estado del robot"
+              >
+                {loading ? '...' : 'Ping una vez'}
+              </button>
 
               <button
                 className="btn btn--ghost"
