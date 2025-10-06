@@ -14,7 +14,7 @@
 
     {
         "source": "/api/:path*",
-        "destination": "https://apirogers-backend.onrender.com/api"
+        "destination": "https://apirogers-backend.onrender.com"
     }
     ], 
     "crons": [{
