@@ -1,3 +1,4 @@
+// Vercel Working now
 {
   "rewrites": [
     {
@@ -9,6 +10,9 @@
       "destination": "https://apirogers-backend.onrender.com/api/:path*"
     }
   ],
+  "env": {
+    "REACT_APP_API_BASE": "https://apirogers-backend.onrender.com"
+  },
   "crons": [
     {
       "path": "/api/cron",
