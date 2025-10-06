@@ -6,7 +6,7 @@ import { createSlice } from '@reduxjs/toolkit';
  * You can set a default set or load them from an API on startup.
  */
 const initialState = {
-  
+  standardProducts: []
 };
 
 const productsSlice = createSlice({

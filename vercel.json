@@ -12,11 +12,5 @@
   "env": {
     "REACT_APP_API_BASE": "https://apirogers-backend.onrender.com",
     "BACKEND_BASE_URL": "https://apirogers-backend.onrender.com"
-  },
-  "crons": [
-    {
-      "path": "/api/cron",
-      "schedule": "*/10 * * * *"
-    }
-  ]
+  }
 }
