@@ -1,13 +1,8 @@
 {
   "rewrites": [
-    {
-      "source": "/api/cron",
-      "destination": "/api/cron"
-    },
-    {
-      "source": "/api/:path*",
-      "destination": "https://apirogers-backend.onrender.com/api/:path*"
-    }
+    { "source": "/api/cron", "destination": "/api/cron" },
+    { "source": "/api/:path*", "destination": "https://apirogers-backend.onrender.com/api/:path*" },
+    { "source": "/(.*)", "destination": "/" }
   ],
   "env": {
     "REACT_APP_API_BASE": "https://apirogers-backend.onrender.com",
