@@ -22,6 +22,9 @@ import LocationPage from './pages/LocationPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import FridgeSettingsPage from './pages/FridgeSettingsPage';
+import LocationSummaryPage from './pages/LocationSummaryPage';
+import HistoryCapacityPage from './pages/HistoryCapacityPage';
+
 //import FridgePage from './pages/FridgePage';
 //import SummaryPage from './pages/SummaryPage';
 
@@ -57,6 +60,23 @@ function App() {
               </ProtectedRoute>
             } 
           />
+          <Route
+            path="/summary"
+            element={
+              <ProtectedRoute allowedRoles={['admin','superuser','user']}>
+                <LocationSummaryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/history-capacity"
+            element={
+              <ProtectedRoute allowedRoles={['admin','superuser']}>
+                <HistoryCapacityPage />
+              </ProtectedRoute>
+            }
+          />
+
           <Route 
             path="/dashboard" 
             element={

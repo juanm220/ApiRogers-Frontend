@@ -536,3 +536,101 @@ table tbody tr:hover td { background: var(--row-hover); }
     padding-right: max(0.9rem, env(safe-area-inset-right));
   }
 }
+
+/* ========== NAVBAR: mobile hamburger & dropdown ========== */
+
+/* Botón hamburger (oculto en desktop) */
+.nav-toggle {
+  display: none;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.45);
+  border-radius: 10px;
+  height: 36px;
+  padding: 0 10px;
+  color: #fff;
+  align-items: center;
+  gap: 6px;
+}
+.nav-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255,255,255,.25); }
+
+.nav-toggle-bar {
+  display: block;
+  width: 18px; height: 2px; background: #fff;
+  position: relative;
+}
+.nav-toggle-bar + .nav-toggle-bar { margin-top: 3px; }
+
+/* Dropdown móvil */
+.mobile-menu {
+  display: none;
+  position: absolute;
+  left: 0; right: 0; top: 60px; /* altura aprox. de la navbar */
+  z-index: 900;
+  padding: 10px 12px;
+}
+.mobile-menu .mobile-menu-inner {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+.mobile-menu .nav-link {
+  color: var(--brand-700);
+  font-weight: 700;
+  padding: .55rem .75rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  display: inline-block;
+}
+.mobile-menu .nav-link:hover { background: var(--row-hover); border-color: var(--border); }
+
+.mobile-control { display: grid; gap: 6px; }
+.mobile-label { font-size: .88rem; color: var(--muted); font-weight: 600; }
+
+/* Backdrop para cerrar tocando fuera */
+.mobile-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  background: rgba(0,0,0,.35);
+  border: 0;
+}
+
+/* Activación en móvil/tablet */
+@media (max-width: 820px) {
+  .nav-toggle { display: inline-flex; }
+
+  /* Oculta nav de desktop y usa dropdown */
+  .nav-right { display: none; }
+
+  .mobile-menu.is-open { display: block; }
+  .mobile-backdrop { display: block; }
+}
+
+/* Grid de tarjetas para Resumen por Locación */
+.loc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+/* Card de locación con respiración extra en móvil */
+.loc-card { padding: 1rem; }
+.loc-head { display: grid; gap: 6px; margin-bottom: .5rem; }
+.loc-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: 9999px; background: var(--surface-2);
+  border: 1px solid var(--border); font-size: .9rem; color: var(--brand-700);
+}
+
+@media (max-width: 480px) {
+  .loc-grid { grid-template-columns: 1fr; gap: 12px; }
+  .loc-card { border-radius: 12px; }
+}

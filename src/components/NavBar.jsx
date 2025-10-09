@@ -1,30 +1,33 @@
-// src/components/NavBar.jsx — polished navbar
-import React, { useEffect, useState } from 'react';
-import { NavLink, Link, useNavigate } from 'react-router-dom';
+// src/components/NavBar.jsx
+import React, { useEffect, useRef, useState } from 'react';
+import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import API from '../apiService';
 import KeepAliveToggle from './keepAliveToggle';
 import '../styles.css';
 
 function NavBar() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const menuRef = useRef(null);
 
   // If using localStorage for token/role
   const token = localStorage.getItem('token');
-  const role = localStorage.getItem('role');
+  const role  = localStorage.getItem('role');
 
   const [locations, setLocations] = useState([]);
   const [selectedLoc, setSelectedLoc] = useState('');
+  const [open, setOpen] = useState(false); // 👈 móvil: estado del menú
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
+    setOpen(false);
     navigate('/login');
   };
 
   useEffect(() => {
     if (!token) return;
-    API
-      .get('/locations')
+    API.get('/locations')
       .then((res) => setLocations(res.data))
       .catch((err) => console.error('Error fetching locations in NavBar:', err));
   }, [token]);
@@ -32,28 +35,84 @@ function NavBar() {
   const handleLocationChange = (e) => {
     const locId = e.target.value;
     setSelectedLoc(locId);
+    setOpen(false);
     if (locId) navigate(`/locations/${locId}`);
   };
 
+  // Cierra menú al cambiar de ruta
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+
+  // Cierra con click fuera
+  useEffect(() => {
+    function onDocClick(e) {
+      if (!open) return;
+      if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  // Cierra con ESC
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') setOpen(false); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  const isAdmin = role === 'admin' || role === 'superuser';
+
   return (
-    <header className="navbar">
-      {/* Brand (white text like the Hawking Team sign) */}
-      <Link to="/dashboard" className="brand" aria-label="Go to Dashboard">
+    <header className="navbar" role="banner">
+      {/* Brand */}
+      <Link to="/dashboard" className="brand" aria-label="Ir al Dashboard">
         <span className="brand-mark" aria-hidden="true" />
         <h1 className="brand-title">Hawking Team</h1>
       </Link>
 
-      {/* Right-side actions */}
-      <nav className="nav-right" aria-label="Primary">
+      {/* Botón Hamburger (solo móvil via CSS) */}
+      <button
+        type="button"
+        className="nav-toggle"
+        aria-label={open ? 'Cerrar navegación' : 'Abrir navegación'}
+        aria-expanded={open ? 'true' : 'false'}
+        aria-controls="primary-nav"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="nav-toggle-bar" />
+        <span className="nav-toggle-bar" />
+        <span className="nav-toggle-bar" />
+      </button>
+
+      {/* Desktop nav */}
+      <nav className="nav-right" aria-label="Principal" id="primary-nav">
         <NavLink to="/home" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
           Home
         </NavLink>
-        {(role === 'admin' || role === 'superuser') && (
+
+        {/* NUEVO: Resumen visible para todos los roles logueados */}
+        <NavLink to="/summary" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+          Resumen
+        </NavLink>
+
+        {isAdmin && (
           <NavLink to="/dashboard" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             Dashboard
           </NavLink>
         )}
-        {(role === 'admin' || role === 'superuser') && (
+        {isAdmin && (
+          <>
+            {/* NUEVO: Historial & Capacidad solo admin/superuser */}
+            <NavLink to="/history-capacity" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              Historial & Capacidad
+            </NavLink>
+
+            <NavLink to="/dashboard" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              Dashboard
+            </NavLink>
+          </>
+        )}
+
+        {isAdmin && (
           <>
             <NavLink to="/admin/users" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               Admin Users
@@ -73,12 +132,11 @@ function NavBar() {
           >
             <option value="">— Cambiar Locación —</option>
             {locations.map((loc) => (
-              <option key={loc._id} value={loc._id}>
-                {loc.name}
-              </option>
+              <option key={loc._id} value={loc._id}>{loc.name}</option>
             ))}
           </select>
         )}
+
         <KeepAliveToggle />
 
         {token && (
@@ -86,11 +144,63 @@ function NavBar() {
             Logout
           </button>
         )}
-        </nav>
+      </nav>
+
+      {/* Mobile dropdown (se muestra con media query) */}
+      <div
+        ref={menuRef}
+        className={`mobile-menu${open ? ' is-open' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Menú de navegación"
+      >
+        <div className="mobile-menu-inner">
+          <NavLink to="/home" className="nav-link" onClick={() => setOpen(false)}>Home</NavLink>
+
+          {isAdmin && (
+            <NavLink to="/dashboard" className="nav-link" onClick={() => setOpen(false)}>Dashboard</NavLink>
+          )}
+
+          {isAdmin && (
+            <>
+              <NavLink to="/admin/users" className="nav-link" onClick={() => setOpen(false)}>Admin Users</NavLink>
+              <NavLink to="/fridge-settings" className="nav-link" onClick={() => setOpen(false)}>Ajustes Neveras</NavLink>
+            </>
+          )}
+
+          {locations.length > 0 && (
+            <div className="mobile-control">
+              <label className="mobile-label">Locación</label>
+              <select
+                className="nav-select"
+                aria-label="Cambiar Locación"
+                value={selectedLoc}
+                onChange={handleLocationChange}
+              >
+                <option value="">— Cambiar Locación —</option>
+                {locations.map((loc) => (
+                  <option key={loc._id} value={loc._id}>{loc.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="mobile-control">
+            <KeepAliveToggle />
+          </div>
+
+          {token && (
+            <button type="button" className="nav-btn nav-btn--danger" onClick={handleLogout}>
+              Logout
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Backdrop para cerrar tocando fuera (solo móvil) */}
+      {open && <button className="mobile-backdrop" aria-label="Cerrar" onClick={() => setOpen(false)} />}
     </header>
   );
 }
-  
+
 export default NavBar;
-
-
