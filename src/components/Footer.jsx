@@ -1,4 +1,3 @@
-// src/components/Footer.jsx
 import React from 'react';
 import '../styles.css';
 
@@ -6,7 +5,11 @@ function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="site-footer" role="contentinfo" aria-label="Footer">
+    <footer
+      className="site-footer safe-pads"
+      role="contentinfo"
+      aria-label="Footer"
+    >
       <div className="footer-inner">
         <div className="footer-brand">
           <span className="brand-mark" aria-hidden="true" />
@@ -16,7 +19,8 @@ function Footer() {
         </div>
 
         <p className="footer-quote">
-          “From sparks to signals to stars—onward. Hicimos del problema un faro” <span className="quote-src">— Black Sails</span>
+          “From sparks to signals to stars—onward. Hicimos del problema un faro”
+          <span className="quote-src"> — Black Sails</span>
         </p>
 
         <div className="footer-meta">

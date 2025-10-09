@@ -22,8 +22,8 @@ function LocationSummaryPage() {
   const [defaultPerFridgeCapacity] = useState(72);
 
   // NUEVO: filtros UI
-  const [searchLoc, setSearchLoc] = useState('');                 // buscador por locación
-  const [prodFilter, setProdFilter] = useState('all');            // all | critical | warn | ok
+  const [searchLoc, setSearchLoc] = useState('');
+  const [prodFilter, setProdFilter] = useState('all'); // all | critical | warn | ok
   const [hideEmptyAfterFilter, setHideEmptyAfterFilter] = useState(true);
 
   const orderMap = useMemo(() => {
@@ -69,7 +69,6 @@ function LocationSummaryPage() {
   };
   const fmtPct = (r) => (Number.isFinite(r) ? `${Math.round(r * 100)}%` : '—');
 
-  // capacidad efectiva loc+producto
   const effectiveCapacityFor = (loc, productName) => {
     const locId = String(loc._id);
     const prodKey = toKey(productName);
@@ -81,7 +80,6 @@ function LocationSummaryPage() {
     return (Number(defaultPerFridgeCapacity) || 72) * fridgeCount;
   };
 
-  // Aplica filtro de criticidad a los productos de una locación
   function filterProductsByStatus(rows) {
     if (prodFilter === 'all') return rows;
     if (prodFilter === 'critical') {
@@ -90,30 +88,31 @@ function LocationSummaryPage() {
     if (prodFilter === 'warn') {
       return rows.filter(r => Number.isFinite(r.ratio) && r.ratio > lowThreshold && r.ratio <= warnThreshold);
     }
-    // ok
     return rows.filter(r => Number.isFinite(r.ratio) && r.ratio > warnThreshold);
   }
 
-  // estilos tabla
-  const tableBase = { width:'100%', borderCollapse:'collapse', background:'#fff', fontSize:'0.95rem' };
-  const txtCell = { textAlign:'left', padding:'8px 10px', border:'1px solid #e6e8ec' };
-  const numCell = { textAlign:'right', padding:'8px 10px', border:'1px solid #e6e8ec', fontVariantNumeric:'tabular-nums' };
-  const headCell = { ...txtCell, background:'#f7f8fa', fontWeight:700 };
-
-  // Filtra locaciones por búsqueda
   const visibleLocations = useMemo(() => {
     const q = toKey(searchLoc);
     if (!q) return locations;
     return locations.filter(l => toKey(l.name).includes(q));
   }, [locations, searchLoc]);
 
+  // Etiquetas de columnas (se usan también en data-label para mobile stacked)
+  const COLS = {
+    prod: 'Producto',
+    current: 'Actual',
+    cap: 'Capacidad efectiva',
+    occ: 'Ocupación',
+    gap: 'Faltan',
+  };
+
   return (
     <div className="main-container">
       <NavBar />
       <h2 style={{ marginTop: '0.5rem' }}>Resumen por Locación</h2>
 
-      {/* Controles de filtro */}
-      <div className="card" style={{ marginBottom: '1rem', display:'grid', gap:12 }}>
+      {/* Controles */}
+      <div className="card" style={{ marginBottom: '1rem', display: 'grid', gap: 12 }}>
         <div className="grid-2">
           <div>
             <label>Buscar locación</label>
@@ -149,7 +148,7 @@ function LocationSummaryPage() {
             className={`chip-radio ${prodFilter === 'critical' ? 'active' : ''}`}
             onClick={() => setProdFilter('critical')}
             aria-pressed={prodFilter === 'critical'}
-            title={`≤ ${Math.round(lowThreshold * 100)}%`}
+            title="Críticos"
           >
             Críticos
           </button>
@@ -158,7 +157,7 @@ function LocationSummaryPage() {
             className={`chip-radio ${prodFilter === 'warn' ? 'active' : ''}`}
             onClick={() => setProdFilter('warn')}
             aria-pressed={prodFilter === 'warn'}
-            title={`≤ ${Math.round(warnThreshold * 100)}%`}
+            title="Advertencia"
           >
             Advertencia
           </button>
@@ -167,7 +166,7 @@ function LocationSummaryPage() {
             className={`chip-radio ${prodFilter === 'ok' ? 'active' : ''}`}
             onClick={() => setProdFilter('ok')}
             aria-pressed={prodFilter === 'ok'}
-            title={`> ${Math.round(warnThreshold * 100)}%`}
+            title="OK"
           >
             OK
           </button>
@@ -183,7 +182,6 @@ function LocationSummaryPage() {
           const breakdown = s.locationBreakdown || {};
           const keys = Object.keys(breakdown);
 
-          // arma filas base
           let rows = keys.map((prod) => {
             const current = Number(breakdown[prod] || 0);
             const cap = effectiveCapacityFor(loc, prod);
@@ -191,20 +189,15 @@ function LocationSummaryPage() {
             return { prod, current, cap, ratio };
           });
 
-          // ordena por orden estándar y luego alfabético
           rows.sort((a, b) => {
             const ia = orderIndex(a.prod), ib = orderIndex(b.prod);
             if (ia !== ib) return ia - ib;
             return String(a.prod).localeCompare(String(b.prod));
           });
 
-          // aplica filtro por criticidad
           rows = filterProductsByStatus(rows);
 
-          // si está activo, oculta locaciones sin filas visibles tras filtros
-          if (hideEmptyAfterFilter && rows.length === 0) {
-            return null;
-          }
+          if (hideEmptyAfterFilter && rows.length === 0) return null;
 
           return (
             <section key={loc._id} className="card loc-card">
@@ -220,28 +213,29 @@ function LocationSummaryPage() {
               {(rows.length === 0) ? (
                 <em>No hay productos que coincidan con el filtro.</em>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ ...tableBase, minWidth: 560 }}>
+                <div className="table-wrap table-wrap--shadow">
+                  <table className="table table--summary table--stack-md" style={{ minWidth: 560 }}>
                     <thead>
                       <tr>
-                        <th style={{ ...headCell, width:'40%' }}>Producto</th>
-                        <th style={{ ...headCell, textAlign:'right', width:110 }}>Actual</th>
-                        <th style={{ ...headCell, textAlign:'right', width:160 }}>Capacidad efectiva</th>
-                        <th style={{ ...headCell, textAlign:'right', width:110 }}>Ocupación</th>
-                        <th style={{ ...headCell, textAlign:'right', width:110 }}>Faltan</th>
+                        <th style={{ width: '40%' }}>{COLS.prod}</th>
+                        <th className="num" style={{ width: 110 }}>{COLS.current}</th>
+                        <th className="num" style={{ width: 160 }}>{COLS.cap}</th>
+                        <th className="num" style={{ width: 110 }}>{COLS.occ}</th>
+                        <th className="num" style={{ width: 110 }}>{COLS.gap}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((r, idx) => {
                         const gap = Math.max(0, r.cap - r.current);
-                        const rowBg = idx % 2 === 0 ? '#fcfdff' : '#ffffff';
                         return (
-                          <tr key={`${loc._id}-${r.prod}`} style={{ background: rowBg }}>
-                            <td style={{ ...txtCell, fontWeight:600 }}>{r.prod}</td>
-                            <td style={{ ...numCell }}>{r.current}</td>
-                            <td style={{ ...numCell }}>{r.cap}</td>
-                            <td style={{ ...numCell, color: colorForRatio(r.ratio) }}>{fmtPct(r.ratio)}</td>
-                            <td style={{ ...numCell }}>{gap}</td>
+                          <tr key={`${loc._id}-${r.prod}`}>
+                            <td data-label={COLS.prod} style={{ fontWeight: 600 }}>{r.prod}</td>
+                            <td data-label={COLS.current} className="num">{r.current}</td>
+                            <td data-label={COLS.cap} className="num">{r.cap}</td>
+                            <td data-label={COLS.occ} className="num" style={{ color: colorForRatio(r.ratio) }}>
+                              {fmtPct(r.ratio)}
+                            </td>
+                            <td data-label={COLS.gap} className="num">{gap}</td>
                           </tr>
                         );
                       })}

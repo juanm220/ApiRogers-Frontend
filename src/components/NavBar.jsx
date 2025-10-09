@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import API from '../apiService';
 import KeepAliveToggle from './keepAliveToggle';
+import ThemeToggle from './ThemeToggle';
 import '../styles.css';
 
 function NavBar() {
@@ -89,19 +90,14 @@ function NavBar() {
           Home
         </NavLink>
 
-        {/* NUEVO: Resumen visible para todos los roles logueados */}
+        {/* Resumen visible para todos los roles logueados */}
         <NavLink to="/summary" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
           Resumen
         </NavLink>
 
         {isAdmin && (
-          <NavLink to="/dashboard" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Dashboard
-          </NavLink>
-        )}
-        {isAdmin && (
           <>
-            {/* NUEVO: Historial & Capacidad solo admin/superuser */}
+            {/* Historial & Capacidad solo admin/superuser */}
             <NavLink to="/history-capacity" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               Historial & Capacidad
             </NavLink>
@@ -138,6 +134,7 @@ function NavBar() {
         )}
 
         <KeepAliveToggle />
+        <ThemeToggle />
 
         {token && (
           <button type="button" className="nav-btn nav-btn--danger" onClick={handleLogout}>
@@ -156,6 +153,15 @@ function NavBar() {
       >
         <div className="mobile-menu-inner">
           <NavLink to="/home" className="nav-link" onClick={() => setOpen(false)}>Home</NavLink>
+
+          {/* Resumen visible para todos */}
+          <NavLink to="/summary" className="nav-link" onClick={() => setOpen(false)}>Resumen</NavLink>
+
+          {isAdmin && (
+            <NavLink to="/history-capacity" className="nav-link" onClick={() => setOpen(false)}>
+              Historial & Capacidad
+            </NavLink>
+          )}
 
           {isAdmin && (
             <NavLink to="/dashboard" className="nav-link" onClick={() => setOpen(false)}>Dashboard</NavLink>
@@ -188,9 +194,20 @@ function NavBar() {
           <div className="mobile-control">
             <KeepAliveToggle />
           </div>
+          <div className="mobile-control">
+            <ThemeToggle />
+          </div>
+        </div>
 
+        {/* Footer fijo: Logout siempre visible */}
+        <div className="mobile-footer">
           {token && (
-            <button type="button" className="nav-btn nav-btn--danger" onClick={handleLogout}>
+            <button
+              type="button"
+              className="nav-btn nav-btn--danger mobile-logout"
+              onClick={handleLogout}
+              aria-label="Cerrar sesión"
+            >
               Logout
             </button>
           )}
