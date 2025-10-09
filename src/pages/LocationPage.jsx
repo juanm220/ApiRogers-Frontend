@@ -287,13 +287,20 @@ const handleCreateFridge = async () => {
 
                     return orderedProducts.map((prod, index) => {
                       const displayVal = fridgeEdits[fridge._id]?.[prod.productName] ?? String(prod.quantity);
+                      const refKey = `${fridge._id}-${index}`;
                       return (
                         <tr key={prod.productName}>
                           <td>{prod.productName}</td>
                           <td>
                             <NumberInput
+                              ref={(el) => { if (el) inputRefs.current[refKey] = el; }}
                               value={displayVal}
                               onChange={(newVal) => handleQuantityChange(fridge._id, prod.productName, newVal)}
+                              onEnter={() => {
+                                const nextKey = `${fridge._id}-${index + 1}`;
+                                const nextEl = inputRefs.current[nextKey];
+                                if (nextEl?.focus) nextEl.focus();
+                              }}
                             />
                           </td>
                         </tr>

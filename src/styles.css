@@ -634,3 +634,47 @@ table tbody tr:hover td { background: var(--row-hover); }
   .loc-grid { grid-template-columns: 1fr; gap: 12px; }
   .loc-card { border-radius: 12px; }
 }
+/* ===== Chips de filtro (reutiliza tus clases) ===== */
+.chip-row { display:flex; gap:8px; flex-wrap:wrap; }
+.chip-radio {
+  border-radius: 9999px;
+  padding: .38rem .8rem;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+  font-weight: 700;
+}
+.chip-radio:hover { background: var(--row-hover); }
+.chip-radio.active {
+  background: var(--info-100);
+  border-color: var(--info);
+}
+/* src/styles.css */
+.custom-number-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.custom-input-field {
+  width: 72px;
+  text-align: center;
+  padding: 6px 8px;
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.custom-input-field:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(64,132,255,.25);
+}
+.minus-btn, .plus-btn {
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #fff;
+}
+.minus-btn:active, .plus-btn:active {
+  transform: translateY(1px);
+}
