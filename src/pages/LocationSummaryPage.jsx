@@ -1,3 +1,4 @@
+// src/pages/LocationSummaryPage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import API from '../apiService';
 import NavBar from '../components/NavBar';
@@ -21,7 +22,7 @@ function LocationSummaryPage() {
   const [warnThreshold] = useState(0.6);
   const [defaultPerFridgeCapacity] = useState(72);
 
-  // NUEVO: filtros UI
+  // filtros UI
   const [searchLoc, setSearchLoc] = useState('');
   const [prodFilter, setProdFilter] = useState('all'); // all | critical | warn | ok
   const [hideEmptyAfterFilter, setHideEmptyAfterFilter] = useState(true);
@@ -97,7 +98,7 @@ function LocationSummaryPage() {
     return locations.filter(l => toKey(l.name).includes(q));
   }, [locations, searchLoc]);
 
-  // Etiquetas de columnas (se usan también en data-label para mobile stacked)
+  // Etiquetas de columnas
   const COLS = {
     prod: 'Producto',
     current: 'Actual',
@@ -176,7 +177,8 @@ function LocationSummaryPage() {
       {loading && <p>Cargando…</p>}
       {errMsg && <p style={{ color: 'crimson' }}>{errMsg}</p>}
 
-      <div className="loc-grid">
+      {/* grid con respiración entre locaciones */}
+      <div className="loc-grid" style={{ gap: 'clamp(12px, 2.5vmin, 20px)' }}>
         {visibleLocations.map((loc) => {
           const s = summaries[loc._id] || {};
           const breakdown = s.locationBreakdown || {};
@@ -214,28 +216,29 @@ function LocationSummaryPage() {
                 <em>No hay productos que coincidan con el filtro.</em>
               ) : (
                 <div className="table-wrap table-wrap--shadow">
-                  <table className="table table--summary table--stack-md" style={{ minWidth: 560 }}>
+                  {/* Mantiene el look “Excel” existente */}
+                  <table className="table-excel" style={{ minWidth: 680 }}>
                     <thead>
                       <tr>
                         <th style={{ width: '40%' }}>{COLS.prod}</th>
-                        <th className="num" style={{ width: 110 }}>{COLS.current}</th>
-                        <th className="num" style={{ width: 160 }}>{COLS.cap}</th>
-                        <th className="num" style={{ width: 110 }}>{COLS.occ}</th>
-                        <th className="num" style={{ width: 110 }}>{COLS.gap}</th>
+                        <th className="num" style={{ width: 120 }}>{COLS.current}</th>
+                        <th className="num" style={{ width: 180 }}>{COLS.cap}</th>
+                        <th className="num" style={{ width: 120 }}>{COLS.occ}</th>
+                        <th className="num" style={{ width: 120 }}>{COLS.gap}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((r, idx) => {
+                      {rows.map((r) => {
                         const gap = Math.max(0, r.cap - r.current);
                         return (
                           <tr key={`${loc._id}-${r.prod}`}>
-                            <td data-label={COLS.prod} style={{ fontWeight: 600 }}>{r.prod}</td>
-                            <td data-label={COLS.current} className="num">{r.current}</td>
-                            <td data-label={COLS.cap} className="num">{r.cap}</td>
-                            <td data-label={COLS.occ} className="num" style={{ color: colorForRatio(r.ratio) }}>
+                            <td>{r.prod}</td>
+                            <td className="num">{r.current}</td>
+                            <td className="num">{r.cap}</td>
+                            <td className="num" style={{ color: colorForRatio(r.ratio) }}>
                               {fmtPct(r.ratio)}
                             </td>
-                            <td data-label={COLS.gap} className="num">{gap}</td>
+                            <td className="num">{gap}</td>
                           </tr>
                         );
                       })}

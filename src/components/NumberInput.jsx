@@ -175,7 +175,8 @@ const NumberInput = forwardRef(function NumberInput(
         onBlur={handleBlur}
         onBeforeInput={handleBeforeInput}
         onPaste={handlePaste}
-        inputMode="decimal"   /* no agranda teclado; si tu teclado trae * /, funcionarán */
+        inputMode={rest.inputMode ?? 'decimal'}
+        pattern={rest.pattern ?? '[0-9+\\-\\s]*'}   /* no agranda teclado; si tu teclado trae * /, funcionarán */
         enterKeyHint="done"
         aria-label="Cantidad"
         {...rest}
