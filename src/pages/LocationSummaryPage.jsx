@@ -1,4 +1,3 @@
-// src/pages/LocationSummaryPage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import API from '../apiService';
 import NavBar from '../components/NavBar';
@@ -26,6 +25,7 @@ function LocationSummaryPage() {
   const [searchLoc, setSearchLoc] = useState('');
   const [prodFilter, setProdFilter] = useState('all'); // all | critical | warn | ok
   const [hideEmptyAfterFilter, setHideEmptyAfterFilter] = useState(true);
+  const [denseRows, setDenseRows] = useState(false);   // 👈 nuevo: filas compactas
 
   const orderMap = useMemo(() => {
     const m = new Map();
@@ -98,7 +98,6 @@ function LocationSummaryPage() {
     return locations.filter(l => toKey(l.name).includes(q));
   }, [locations, searchLoc]);
 
-  // Etiquetas de columnas
   const COLS = {
     prod: 'Producto',
     current: 'Actual',
@@ -124,13 +123,23 @@ function LocationSummaryPage() {
               onChange={(e) => setSearchLoc(e.target.value)}
             />
           </div>
-          <div>
+          <div className="flex-row" style={{ alignItems: 'center', gap: 10 }}>
             <label>Ocultar locaciones sin resultados</label>
             <input
               type="checkbox"
               checked={hideEmptyAfterFilter}
               onChange={(e) => setHideEmptyAfterFilter(e.target.checked)}
             />
+            <span className="push-right" />
+            {/* 👇 Toggle de densidad; útil en móvil sin romper el formato tabla */}
+            <label className="flex-row" style={{ gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={denseRows}
+                onChange={(e) => setDenseRows(e.target.checked)}
+              />
+              Filas compactas
+            </label>
           </div>
         </div>
 
@@ -149,7 +158,7 @@ function LocationSummaryPage() {
             className={`chip-radio ${prodFilter === 'critical' ? 'active' : ''}`}
             onClick={() => setProdFilter('critical')}
             aria-pressed={prodFilter === 'critical'}
-            title="Críticos"
+            title={`≤ ${Math.round(lowThreshold * 100)}%`}
           >
             Críticos
           </button>
@@ -158,7 +167,7 @@ function LocationSummaryPage() {
             className={`chip-radio ${prodFilter === 'warn' ? 'active' : ''}`}
             onClick={() => setProdFilter('warn')}
             aria-pressed={prodFilter === 'warn'}
-            title="Advertencia"
+            title={`≤ ${Math.round(warnThreshold * 100)}%`}
           >
             Advertencia
           </button>
@@ -167,7 +176,7 @@ function LocationSummaryPage() {
             className={`chip-radio ${prodFilter === 'ok' ? 'active' : ''}`}
             onClick={() => setProdFilter('ok')}
             aria-pressed={prodFilter === 'ok'}
-            title="OK"
+            title={`> ${Math.round(warnThreshold * 100)}%`}
           >
             OK
           </button>
@@ -216,8 +225,11 @@ function LocationSummaryPage() {
                 <em>No hay productos que coincidan con el filtro.</em>
               ) : (
                 <div className="table-wrap table-wrap--shadow">
-                  {/* Mantiene el look “Excel” existente */}
-                  <table className="table-excel" style={{ minWidth: 680 }}>
+                  {/* Mantiene el look “Excel” en todas las resoluciones */}
+                  <table
+                    className={`table-excel ${denseRows ? 'table--dense' : ''}`}
+                    style={{ minWidth: 680 }}
+                  >
                     <thead>
                       <tr>
                         <th style={{ width: '40%' }}>{COLS.prod}</th>

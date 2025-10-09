@@ -101,10 +101,6 @@ function NavBar() {
             <NavLink to="/history-capacity" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               Historial & Capacidad
             </NavLink>
-
-            <NavLink to="/dashboard" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              Dashboard
-            </NavLink>
           </>
         )}
 

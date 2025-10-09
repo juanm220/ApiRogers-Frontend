@@ -73,12 +73,15 @@ function LoginPage() {
           </button>
 
           {message && (
-            <p className={message.toLowerCase().includes('error') ? 'error-message' : 'success-message'}>
+            <p
+              role="status"
+              aria-live="polite"
+              className={message.toLowerCase().includes('error') ? 'error-message' : 'success-message'}
+            >
               {message}
             </p>
           )}
         </form>
-
         <p style={{ marginTop: 12 }}>
           ¿No tienes cuenta?
           <Link to="/register"> Regístrate aquí</Link>

@@ -1,20 +1,19 @@
-// src/components/NumberInput.jsx
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import '../styles.css';
 
 /**
  * Soporta:
- * - Entrada directa numérica ("14")
- * - Expresiones con + - * /  (también x, ×, ÷) p.ej. "12+2-3*2"
- * - Enter / blur => evalúa y fija el valor resultante (string)
+ * - Entrada numérica directa ("14")
+ * - Expresiones con + - * /  (x, ×, ÷ también) ej: "12+2-3*2"
+ * - Enter / blur => evalúa y fija el valor (string)
  * - Botones +/- siguen funcionando
- * - min/max: clamp del resultado final
+ * - min/max: clamp del resultado
  */
 const NumberInput = forwardRef(function NumberInput(
   {
-    value,          // string desde el padre (p.ej. "14")
-    onChange,       // (str)=>void — siempre envía número en string tras confirmar
-    onEnter,        // ()=>void — saltar al siguiente input si quieres
+    value,
+    onChange,
+    onEnter,
     min = 0,
     max = 999999,
     ...rest
@@ -22,21 +21,23 @@ const NumberInput = forwardRef(function NumberInput(
   ref
 ) {
   const inputRef = useRef(null);
-  const [draft, setDraft] = useState(value ?? ''); // lo que se teclea (puede tener + - * /)
+  const [draft, setDraft] = useState(value ?? '');
 
-  // Exponer focus/blur al padre
+  // Heurística simple de móvil (solo para inputMode por defecto)
+  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const defaultInputMode = isMobile ? 'text' : 'decimal';
+
   useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
     blur: () => inputRef.current?.blur(),
     node: inputRef.current,
   }));
 
-  // Sincroniza si el padre cambia value
   useEffect(() => {
     setDraft(value ?? '');
   }, [value]);
 
-  // Eval con prioridad (* y / antes que + y -), admite x, × y ÷
+  // Eval con prioridad (* / antes que + -), admite x, ×, ÷
   const evalExpr = (str) => {
     const normalized = String(str || '')
       .replace(/\s+/g, '')
@@ -45,14 +46,12 @@ const NumberInput = forwardRef(function NumberInput(
 
     if (normalized === '') return '';
 
-    // Solo dígitos y operadores
     if (!/^[\d+\-*/]+$/.test(normalized)) return null;
 
-    // Tokeniza
     const tokens = normalized.match(/(\d+|[+\-*/])/g);
     if (!tokens) return null;
 
-    // Manejo de unarios (+/- pegados a inicio o tras operador): inyecta 0
+    // Manejo de +/− unarios
     const fixed = [];
     for (let i = 0; i < tokens.length; i++) {
       const t = tokens[i];
@@ -63,7 +62,7 @@ const NumberInput = forwardRef(function NumberInput(
       }
     }
 
-    // Primera pasada: * y /
+    // * y /
     const stack = [];
     let i = 0;
     while (i < fixed.length) {
@@ -85,7 +84,7 @@ const NumberInput = forwardRef(function NumberInput(
       }
     }
 
-    // Segunda pasada: + y -
+    // + y -
     let sum = parseInt(stack[0], 10);
     if (Number.isNaN(sum)) return null;
     for (let j = 1; j < stack.length; j += 2) {
@@ -95,12 +94,11 @@ const NumberInput = forwardRef(function NumberInput(
       sum = op === '+' ? sum + num : sum - num;
     }
 
-    // clamp
     const clamped = Math.max(min, Math.min(max, sum));
     return String(clamped);
   };
 
-  // Tecleo: permitir dígitos y + - * / x X ÷ y espacios
+  // Tecleo: dígitos + operadores + espacios
   const handleInputChange = (e) => {
     const text = e.target.value;
     if (/^[\d+\-*/xX÷\s]*$/.test(text)) {
@@ -108,7 +106,6 @@ const NumberInput = forwardRef(function NumberInput(
     }
   };
 
-  // Pegar: filtrar a dígitos y operadores permitidos
   const handlePaste = (e) => {
     const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
     const cleaned = text.replace(/[^\d+\-*/xX÷\s]/g, '');
@@ -116,22 +113,19 @@ const NumberInput = forwardRef(function NumberInput(
     setDraft((prev) => (prev || '') + cleaned);
   };
 
-  // Bloquear caracteres no permitidos
   const handleBeforeInput = (e) => {
-    if (e.data == null) return; // teclas especiales/composición
+    if (e.data == null) return;
     if (!/^[\d+\-*/xX÷\s]$/.test(e.data)) e.preventDefault();
   };
 
-  // Confirmación: Enter/blur evalúan y fijan
   const commit = () => {
     const res = evalExpr(draft);
     if (res == null) {
-      // expresión inválida → revertir al último valor del padre
       setDraft(value ?? '');
       return;
     }
     setDraft(res);
-    onChange(res); // el padre recibe número (string)
+    onChange(res);
   };
 
   const increment = () => {
@@ -158,9 +152,7 @@ const NumberInput = forwardRef(function NumberInput(
     }
   };
 
-  const handleBlur = () => {
-    commit();
-  };
+  const handleBlur = () => { commit(); };
 
   return (
     <div className="custom-number-input">
@@ -175,8 +167,17 @@ const NumberInput = forwardRef(function NumberInput(
         onBlur={handleBlur}
         onBeforeInput={handleBeforeInput}
         onPaste={handlePaste}
-        inputMode={rest.inputMode ?? 'decimal'}
-        pattern={rest.pattern ?? '[0-9+\\-\\s]*'}   /* no agranda teclado; si tu teclado trae * /, funcionarán */
+
+        /* 👇 Por defecto: 'text' en móvil para que aparezca '+'; 'decimal' en desktop.
+              Si el padre pasa inputMode, tiene prioridad. */
+        inputMode={rest.inputMode ?? defaultInputMode}
+
+        /* Alineado con lo que soporta el parser (+ - * / x ÷ y espacios) */
+        pattern={rest.pattern ?? '[0-9+\\-*/xX÷\\s]*'}
+
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
         enterKeyHint="done"
         aria-label="Cantidad"
         {...rest}
