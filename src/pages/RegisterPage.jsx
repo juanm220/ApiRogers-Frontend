@@ -1,6 +1,5 @@
 // src/pages/RegisterPage.jsx
 import React, { useState } from 'react';
-import axios from 'axios';
 import API from '../apiService';
 import { Link, useNavigate } from 'react-router-dom';
 import '../styles.css';
@@ -17,13 +16,28 @@ function RegisterPage() {
     setErr('');
     setOk('');
     setLoading(true);
+
+    // 👇 normaliza ANTES de enviar
+    const payload = {
+      name: form.name.trim(),
+      lastname: form.lastname.trim(),
+      email: form.email.trim().toLowerCase(),
+      password: form.password, // no trim a passwords
+    };
+
     try {
-      const res = await API.post('/users/register', form);
+      const res = await API.post('/users/register', payload, {
+        // timeouts y cancelables si quieres
+      });
       setOk(res.data?.message || '¡Registro exitoso!');
-      // redirige al login tras un pequeño respiro visual
-      setTimeout(() => navigate('/login'), 700);
+      setTimeout(() => navigate('/login'), 600);
     } catch (error) {
-      setErr(error.response?.data?.message || 'Error registrando usuario');
+      const status = error?.response?.status;
+      const msg =
+        status === 409
+          ? 'Ese correo ya está registrado.'
+          : error?.response?.data?.message || 'Error registrando usuario';
+      setErr(msg);
     } finally {
       setLoading(false);
     }
@@ -31,12 +45,7 @@ function RegisterPage() {
 
   return (
     <div className="auth-page">
-      <div
-        className="login-container"
-        role="dialog"
-        aria-labelledby="register-title"
-        aria-describedby="register-desc"
-      >
+      <div className="login-container" role="dialog" aria-labelledby="register-title" aria-describedby="register-desc">
         <h2 id="register-title">Crear cuenta</h2>
         <p id="register-desc">Completa los campos para registrar un usuario.</p>
 

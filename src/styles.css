@@ -433,3 +433,106 @@ table tbody tr:hover td { background: var(--row-hover); }
   background: var(--info-100);
   border-color: var(--info);
 }
+
+/* para los pop ups */
+
+.toast {
+  position: fixed; right: 16px; bottom: 16px;
+  background: #111; color: #fff; padding: 12px 14px; border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.2);
+}
+.toast.error { background: #c0392b; }
+.toast.ok { background: #2ecc71; }
+
+/* =============================================================
+   RESPONSIVE LAYER — append-only (safe for desktop)
+   ============================================================= */
+
+/* Escala tipografías y contenedor */
+@media (max-width: 1024px) {
+  .main-container { max-width: 100%; padding: 1.25rem; }
+  h1 { font-size: 1.65rem; }
+  h2 { font-size: 1.35rem; }
+  h3 { font-size: 1.15rem; }
+}
+
+@media (max-width: 640px) {
+  html, body { font-size: 16px; line-height: 1.4; }
+  .main-container { padding: 0.9rem; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.2rem; }
+  h3 { font-size: 1.05rem; }
+}
+
+/* Navbar: se adapta y no desborda */
+@media (max-width: 820px) {
+  .navbar { flex-wrap: wrap; row-gap: 8px; }
+  .navbar .brand,
+  .navbar h1 { font-size: 1.15rem; }
+  .navbar .nav-right {
+    margin-left: 0;
+    flex: 1 1 100%;
+    display: flex; gap: 8px; align-items: center;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .nav-link { padding: .4rem .6rem; }
+  .nav-btn, .nav-select { height: 34px; }
+}
+
+/* Cards: respiración en móvil */
+@media (max-width: 640px) {
+  .card { padding: 0.85rem; border-radius: 12px; }
+}
+
+/* Botones & inputs: área táctil 44px */
+@media (max-width: 640px) {
+  button, .btn { min-height: 44px; padding: 0.6rem 0.9rem; font-size: 1rem; }
+  .btn--icon { width: 44px; height: 44px; }
+  input[type="text"], input[type="number"], input[type="date"], select {
+    height: 44px; font-size: 1rem;
+  }
+  .custom-input-field { height: 44px; }
+  .minus-btn, .plus-btn { width: 44px; height: 44px; font-size: 1.2rem; }
+}
+
+/* Formularios (login/register) */
+@media (max-width: 520px) {
+  .auth-page { padding: 16px; }
+  .login-container { max-width: 94vw; padding: 20px; border-radius: 14px; }
+  .login-container h2 { font-size: 1.35rem; }
+  .form-group { gap: 8px; margin-bottom: 14px; }
+  .login-btn { height: 48px; font-size: 1rem; }
+}
+
+/* Tablas: scroll horizontal en pantallas estrechas
+   (no cambia tu markup; también puedes envolver con .table-wrap si quieres) */
+@media (max-width: 900px) {
+  table { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table thead th { position: sticky; top: 0; }
+  table th, table td { white-space: nowrap; min-width: 120px; }
+  .table--dense th, .table--dense td { min-width: 96px; }
+}
+
+/* Utilidades para layouts en móvil (opcionales, no rompen nada) */
+@media (max-width: 640px) {
+  .flex-row.stack-sm { flex-direction: column; align-items: stretch; gap: 10px; }
+  .grid-2 { grid-template-columns: 1fr; gap: 10px; }
+  .mobile-hidden { display: none !important; }
+  .mobile-only { display: initial !important; }
+}
+
+/* Footer compacto en móvil */
+@media (max-width: 640px) {
+  .site-footer { padding: 18px 12px; }
+  .footer-inner { gap: 8px; }
+  .footer-meta { gap: 6px; font-size: .9rem; }
+}
+
+/* Safe-area iOS (mejor UX en iPhone con notch) */
+@supports (padding: max(0px)) {
+  .auth-page, .main-container, .site-footer {
+    padding-left: max(0.9rem, env(safe-area-inset-left));
+    padding-right: max(0.9rem, env(safe-area-inset-right));
+  }
+}
