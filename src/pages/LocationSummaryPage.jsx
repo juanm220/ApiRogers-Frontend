@@ -25,7 +25,11 @@ function LocationSummaryPage() {
   const [searchLoc, setSearchLoc] = useState('');
   const [prodFilter, setProdFilter] = useState('all'); // all | critical | warn | ok
   const [hideEmptyAfterFilter, setHideEmptyAfterFilter] = useState(true);
-  const [denseRows, setDenseRows] = useState(false);   // 👈 nuevo: filas compactas
+  const [denseRows, setDenseRows] = useState(false);
+
+  // Resumen inventario por locación
+  // { [locId]: { initial: { [prod]: num }, final: { [prod]: num|undefined }, transfer: { [prod]: +n|-n } } }
+  const [invSummaries, setInvSummaries] = useState({});
 
   const orderMap = useMemo(() => {
     const m = new Map();
@@ -38,6 +42,7 @@ function LocationSummaryPage() {
     return typeof i === 'number' ? i : 9999;
   };
 
+  // Carga principal
   useEffect(() => {
     const controller = new AbortController();
     (async () => {
@@ -49,14 +54,57 @@ function LocationSummaryPage() {
         setStdOrder(Array.isArray(data.stdOrder) ? data.stdOrder : []);
         setCapacityMap(data.capacityMap || {});
         setCapacityByLocation(data.capacityByLocation || {});
-        setLocations(Array.isArray(data.locations) ? data.locations : []);
+        const locs = Array.isArray(data.locations) ? data.locations : [];
+        setLocations(locs);
         setSummaries(data.summaries || {});
         setLoading(false);
+
+        // 🔁 Una vez que tengo locaciones, busco sesiones activas y summaries
+        // Esto funciona con TU backend actual:
+        // GET /inventory-sessions/active?locationId=...
+        // GET /inventory-sessions/:sessionId/summary
+        const invMap = {};
+        await Promise.all(
+          (locs || []).map(async (loc) => {
+            try {
+              const activeRes = await API.get('/inventory-sessions/active', {
+                params: { locationId: loc._id },
+                timeout: 12000,
+              });
+              const sess = activeRes.data?.session;
+              if (!sess?._id) return;
+
+              const sumRes = await API.get(`/inventory-sessions/${sess._id}/summary`, { timeout: 15000 });
+              const rows = sumRes.data?.data?.rows || [];
+              // rows: [{ productName, inicial, entradas, salidas, final|null, diferencia|null }]
+
+              const initial = {};
+              const final = {};
+              const transfer = {};
+              for (const row of rows) {
+                const name = row.productName;
+                initial[name] = Number(row.inicial) || 0;
+                if (row.final == null || Number.isNaN(Number(row.final))) {
+                  // sesión aún abierta -> no hay final
+                } else {
+                  final[name] = Number(row.final) || 0;
+                }
+                const net = (Number(row.entradas) || 0) - (Number(row.salidas) || 0);
+                if (net) transfer[name] = net;
+              }
+              invMap[loc._id] = { initial, final, transfer };
+            } catch (e) {
+              // si algo falla para una locación, seguimos con las demás
+            }
+          })
+        );
+        setInvSummaries(invMap);
       } catch (e) {
-        if (e?.name === 'CanceledError') return;
-        console.error('Summary load error:', e);
-        setErrMsg('Error cargando el resumen');
-        setLoading(false);
+        if (e?.name !== 'CanceledError') {
+          console.error('Summary load error:', e);
+          setErrMsg('Error cargando el resumen');
+          setLoading(false);
+        }
       }
     })();
     return () => controller.abort();
@@ -84,27 +132,19 @@ function LocationSummaryPage() {
   function filterProductsByStatus(rows) {
     if (prodFilter === 'all') return rows;
     if (prodFilter === 'critical') {
-      return rows.filter(r => Number.isFinite(r.ratio) && r.ratio <= lowThreshold);
+      return rows.filter((r) => Number.isFinite(r.ratio) && r.ratio <= lowThreshold);
     }
     if (prodFilter === 'warn') {
-      return rows.filter(r => Number.isFinite(r.ratio) && r.ratio > lowThreshold && r.ratio <= warnThreshold);
+      return rows.filter((r) => Number.isFinite(r.ratio) && r.ratio > lowThreshold && r.ratio <= warnThreshold);
     }
-    return rows.filter(r => Number.isFinite(r.ratio) && r.ratio > warnThreshold);
+    return rows.filter((r) => Number.isFinite(r.ratio) && r.ratio > warnThreshold);
   }
 
   const visibleLocations = useMemo(() => {
     const q = toKey(searchLoc);
     if (!q) return locations;
-    return locations.filter(l => toKey(l.name).includes(q));
+    return locations.filter((l) => toKey(l.name).includes(q));
   }, [locations, searchLoc]);
-
-  const COLS = {
-    prod: 'Producto',
-    current: 'Actual',
-    cap: 'Capacidad efectiva',
-    occ: 'Ocupación',
-    gap: 'Faltan',
-  };
 
   return (
     <div className="main-container">
@@ -131,7 +171,6 @@ function LocationSummaryPage() {
               onChange={(e) => setHideEmptyAfterFilter(e.target.checked)}
             />
             <span className="push-right" />
-            {/* 👇 Toggle de densidad; útil en móvil sin romper el formato tabla */}
             <label className="flex-row" style={{ gap: 8 }}>
               <input
                 type="checkbox"
@@ -186,7 +225,6 @@ function LocationSummaryPage() {
       {loading && <p>Cargando…</p>}
       {errMsg && <p style={{ color: 'crimson' }}>{errMsg}</p>}
 
-      {/* grid con respiración entre locaciones */}
       <div className="loc-grid" style={{ gap: 'clamp(12px, 2.5vmin, 20px)' }}>
         {visibleLocations.map((loc) => {
           const s = summaries[loc._id] || {};
@@ -197,7 +235,14 @@ function LocationSummaryPage() {
             const current = Number(breakdown[prod] || 0);
             const cap = effectiveCapacityFor(loc, prod);
             const ratio = cap > 0 ? current / cap : NaN;
-            return { prod, current, cap, ratio };
+
+            // Lectura de inicial / final / transfer (si existe sesión activa)
+            const inv = invSummaries[loc._id] || {};
+            const initial = Number(inv.initial?.[prod]);
+            const final = Number(inv.final?.[prod]);
+            const transferNet = Number(inv.transfer?.[prod]); // puede ser + o -
+
+            return { prod, current, cap, ratio, initial, final, transferNet };
           });
 
           rows.sort((a, b) => {
@@ -225,26 +270,49 @@ function LocationSummaryPage() {
                 <em>No hay productos que coincidan con el filtro.</em>
               ) : (
                 <div className="table-wrap table-wrap--shadow">
-                  {/* Mantiene el look “Excel” en todas las resoluciones */}
                   <table
                     className={`table-excel ${denseRows ? 'table--dense' : ''}`}
-                    style={{ minWidth: 680 }}
+                    style={{ minWidth: 860 }}
                   >
                     <thead>
                       <tr>
-                        <th style={{ width: '40%' }}>{COLS.prod}</th>
-                        <th className="num" style={{ width: 120 }}>{COLS.current}</th>
-                        <th className="num" style={{ width: 180 }}>{COLS.cap}</th>
-                        <th className="num" style={{ width: 120 }}>{COLS.occ}</th>
-                        <th className="num" style={{ width: 120 }}>{COLS.gap}</th>
+                        <th style={{ width: '34%' }}>Producto</th>
+                        <th className="num" style={{ width: 110 }}>Inicial</th>
+                        <th className="num" style={{ width: 110 }}>Final</th>
+                        <th className="num" style={{ width: 110 }}>Actual</th>
+                        <th className="num" style={{ width: 180 }}>Capacidad efectiva</th>
+                        <th className="num" style={{ width: 120 }}>Ocupación</th>
+                        <th className="num" style={{ width: 120 }}>Faltan</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((r) => {
                         const gap = Math.max(0, r.cap - r.current);
+                        const hasInitial = Number.isFinite(r.initial);
+                        const hasFinal = Number.isFinite(r.final);
+                        const hasTransfer = Number.isFinite(r.transferNet) && r.transferNet !== 0;
+
                         return (
                           <tr key={`${loc._id}-${r.prod}`}>
                             <td>{r.prod}</td>
+
+                            {/* Inicial con micro delta de transferencias */}
+                            <td className="num">
+                              {hasInitial ? r.initial : '—'}
+                              {hasTransfer && (
+                                <small
+                                  className={`small-delta ${r.transferNet < 0 ? 'negative' : 'positive'}`}
+                                  title="Transferencias netas durante la sesión"
+                                >
+                                  {Math.abs(r.transferNet)}
+                                </small>
+                              )}
+                            </td>
+
+                            {/* Final */}
+                            <td className="num">{hasFinal ? r.final : '—'}</td>
+
+                            {/* Métricas actuales */}
                             <td className="num">{r.current}</td>
                             <td className="num">{r.cap}</td>
                             <td className="num" style={{ color: colorForRatio(r.ratio) }}>
@@ -262,6 +330,20 @@ function LocationSummaryPage() {
           );
         })}
       </div>
+
+      {/* Estilo micro-badge de transferencias */}
+      <style>
+        {`
+          .small-delta {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-left: 6px;
+            white-space: nowrap;
+          }
+          .small-delta.negative::before { content: '−'; }
+          .small-delta.positive::before { content: '+'; }
+        `}
+      </style>
 
       <Footer />
     </div>

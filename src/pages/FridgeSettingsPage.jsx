@@ -130,32 +130,28 @@ function FridgeSettingsPage() {
   };
 
   const removeItem = async (index) => {
-    const name = draftItems[index];
-    const ok = window.confirm(
-      `¿Eliminar "${name}" del estándar y de TODAS las neveras? Esta acción quitará ese producto de cada nevera.`
-    );
-    if (!ok) return;
+  const name = draftItems[index];
+  const ok = window.confirm(
+    `¿Eliminar "${name}" del estándar y de TODAS las neveras? Esta acción quitará ese producto de cada nevera y dejará registro en Historial.`
+  );
+  if (!ok) return;
 
-    // 1) Quitar de la UI
-    const copy = [...draftItems];
-    copy.splice(index, 1);
-    setDraftItems(copy);
+  // 1) UI primero
+  const copy = [...draftItems];
+  copy.splice(index, 1);
+  setDraftItems(copy);
 
-    // 2) Limpiar inmediatamente en backend (pull global por nombre)
-    await cleanupOne(name);
-
-  // 3) Reset para que el próximo autosync solo reordene/complemente
-  removeExtrasRef.current = false;
-  // 3) Forzar que el próximo autosync QUITE extras no-estándar
-  removeExtrasRef.current = true;
-
-  // 4) (Opcional, más inmediato) dispara el sync ahora mismo:
   try {
-    await API.post('/config/sync-fridges', { removeExtras: true });
+    // 2) DELETE consistente con backend actual
+    await API.delete(`/config/standard-products/${encodeURIComponent(name)}`, { timeout: 15000 });
+
+    // 3) (Opcional) asegurar sync inmediato (ordena/completa)
+    await API.post('/config/sync-fridges', { removeExtras: true }, { timeout: 20000 });
   } catch (e) {
-    console.error('sync after cleanup error', e);
+    console.error('delete standard + sync error', e);
   }
-  };
+};
+
 
   const removeExtrasRef = useRef(false);
 

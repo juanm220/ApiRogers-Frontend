@@ -103,7 +103,13 @@ function NavBar() {
             </NavLink>
           </>
         )}
-
+        {/* Transferencias */}
+        {isAdmin && (
+          <NavLink to="/transfers" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            Transferencias
+          </NavLink>
+        )}
+        {/* Administrar usuarios // fridges */}
         {isAdmin && (
           <>
             <NavLink to="/admin/users" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
@@ -162,7 +168,11 @@ function NavBar() {
           {isAdmin && (
             <NavLink to="/dashboard" className="nav-link" onClick={() => setOpen(false)}>Dashboard</NavLink>
           )}
-
+          {isAdmin && (
+            <NavLink to="/transfers" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              Transferencias
+            </NavLink>
+          )}
           {isAdmin && (
             <>
               <NavLink to="/admin/users" className="nav-link" onClick={() => setOpen(false)}>Admin Users</NavLink>

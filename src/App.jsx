@@ -24,6 +24,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import FridgeSettingsPage from './pages/FridgeSettingsPage';
 import LocationSummaryPage from './pages/LocationSummaryPage';
 import HistoryCapacityPage from './pages/HistoryCapacityPage';
+import TransfersPage from './pages/TransfersPage';
 
 //import FridgePage from './pages/FridgePage';
 //import SummaryPage from './pages/SummaryPage';
@@ -76,7 +77,14 @@ function App() {
               </ProtectedRoute>
             }
           />
-
+          <Route
+            path="/transfers"
+            element={
+              <ProtectedRoute allowedRoles={['admin','superuser']}>
+                <TransfersPage />
+              </ProtectedRoute>
+            }
+          />
           <Route 
             path="/dashboard" 
             element={

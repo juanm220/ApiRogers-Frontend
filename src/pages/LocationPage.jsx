@@ -15,6 +15,10 @@ function LocationPage() {
   const token = useSelector((s) => s.auth.token);
   const role = useSelector((s) => s.auth.role);
 
+  // Inventario (sesión inicial/final)
+  const [invActive, setInvActive] = useState(null); // { _id, startedAt } | null
+  const [invBusy, setInvBusy] = useState(false);
+
   const [locationData, setLocationData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -39,6 +43,8 @@ function LocationPage() {
 
   // Timers de debounce por fridge
   const debouncers = useRef({}); // { [fridgeId]: numberTimeoutId }
+  // AbortController por fridge (para cancelar el request anterior si llega uno nuevo)
+  const ctrlRefs = useRef({}); // { [fridgeId]: AbortController }
 
   // refs para focus secuencial
   const inputRefs = useRef({});
@@ -106,7 +112,7 @@ function LocationPage() {
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await API.get(`/locations/${locationId}`, { signal: controller.signal });
+        const res = await API.get(`/locations/${locationId}`, { signal: controller.signal, timeout: 15000 });
         setLocationData(res.data);
         setNewName(res.data?.name || '');
         const initEdits = {};
@@ -121,7 +127,9 @@ function LocationPage() {
         }
         setFridgeEdits(initEdits);
       } catch (err) {
-        console.error('Error fetching location data:', err);
+        if (err?.name !== 'CanceledError') {
+          console.error('Error fetching location data:', err);
+        }
       } finally {
         setLoading(false);
       }
@@ -132,7 +140,7 @@ function LocationPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await API.get('/config/standard-products');
+        const res = await API.get('/config/standard-products', { timeout: 10000 });
         const list = res.data?.items ?? res.data?.data?.items ?? [];
         setStandardOrder(list);
       } catch (err) {
@@ -142,12 +150,117 @@ function LocationPage() {
     })();
   }, [token]);
 
+  // ======== INVENTARIO: Sesión activa ========
+
+  // Helper: carga la sesión activa (usa ?locationId=)
+  async function fetchActiveInv() {
+    try {
+      const r = await API.get(`/locations/inventory-sessions/active`, {
+        params: { locationId },
+        timeout: 12000,
+      });
+      // backend retorna { ok, session: {...} } o { ok, session: null }
+      setInvActive(r.data?.session || null);
+    } catch (e) {
+      console.error('fetchActiveInv error', e);
+      setInvActive(null);
+    }
+  }
+
+  // Efecto: traer sesión activa al cargar página
+  useEffect(() => {
+    if (!locationId) return;
+    fetchActiveInv();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId]);
+
+  // Construye el finalSnapshot a partir del estado actual de la UI
+  function buildFinalSnapshotFromUI() {
+    // Estructura esperada por backend:
+    // [{ fridgeId, products: [{ productName, quantity }, ...] }]
+    const out = [];
+    for (const fr of (locationData?.refrigerators || [])) {
+      const editsForFr = fridgeEdits[fr._id] || {};
+      const products = (fr.products || []).map((p) => {
+        const raw = editsForFr[p.productName];
+        const q = raw === '' || raw == null ? 0 : parseInt(String(raw).replace(/\D+/g, ''), 10) || 0;
+        return { productName: p.productName, quantity: q };
+      });
+      out.push({ fridgeId: fr._id, products });
+    }
+    return out;
+  }
+
+  // Handlers de inventario
+  async function handleStartInventory() {
+    if (invBusy) return;
+
+    // (Opcional) avisar si hay cambios sin guardar
+    if (hasUnsaved) {
+      const ok = window.confirm(
+        'Tienes cambios sin guardar. ¿Iniciar sesión de inventario igualmente?'
+      );
+      if (!ok) return;
+    }
+
+    setInvBusy(true);
+    try {
+      await API.post(
+        `/locations/inventory-sessions/start`,
+        { locationId }, // body
+        { timeout: 15000 }
+      );
+      await fetchActiveInv();
+      setToast({ type: 'ok', text: 'Sesión de inventario inicial iniciada.' });
+    } catch (e) {
+      console.error(e);
+      setToast({ type: 'error', text: 'No se pudo iniciar la sesión.' });
+    } finally {
+      setInvBusy(false);
+    }
+  }
+
+  async function handleCloseWithFinal() {
+    if (invBusy || !invActive?._id) return;
+
+    // Avisar si hay cambios sin guardar; cerraremos usando lo que ves en la UI
+    if (hasUnsaved) {
+      const ok = window.confirm(
+        'Tienes cambios sin guardar. ¿Cerrar sesión e incluir lo que ves ahora como inventario final?'
+      );
+      if (!ok) return;
+    }
+
+    setInvBusy(true);
+    try {
+      // 1) Construir finalSnapshot desde la UI actual
+      const finalSnapshot = buildFinalSnapshotFromUI();
+
+      // 2) Enviar al backend (tu endpoint espera { finalSnapshot })
+      await API.patch(
+        `/locations/inventory-sessions/${invActive._id}/final`,
+        { finalSnapshot },
+        { timeout: 20000 }
+      );
+
+      // 3) Refrescar sesión activa (debería quedar en null al cerrar)
+      await fetchActiveInv();
+
+      setToast({ type: 'ok', text: 'Inventario final registrado y sesión cerrada.' });
+    } catch (e) {
+      console.error(e);
+      setToast({ type: 'error', text: 'No se pudo cerrar la sesión.' });
+    } finally {
+      setInvBusy(false);
+    }
+  }
+
   // ---- acciones admin ----
   const handleRenameLocation = async () => {
     if (role !== 'admin' && role !== 'superuser') return;
     if (!newName.trim()) return alert('El nombre no puede estar vacío.');
     try {
-      const res = await API.put(`/locations/${locationId}`, { name: newName });
+      const res = await API.put(`/locations/${locationId}`, { name: newName }, { timeout: 12000 });
       setLocationData((prev) => ({ ...prev, name: newName }));
       setToast({ type: 'ok', text: res.data.message || 'Locación renombrada.' });
     } catch {
@@ -160,7 +273,7 @@ function LocationPage() {
     const confirmed = window.confirm('¿Seguro que deseas eliminar esta locación?');
     if (!confirmed) return;
     try {
-      await API.delete(`/locations/${locationId}`);
+      await API.delete(`/locations/${locationId}`, { timeout: 12000 });
       setToast({ type: 'ok', text: 'Locación eliminada.' });
       navigate('/home');
     } catch {
@@ -172,8 +285,8 @@ function LocationPage() {
     if (role !== 'admin' && role !== 'superuser') return;
     if (!newFridgeName.trim()) return alert('Nombre del refrigerador es requerido.');
     try {
-      const res = await API.post(`/locations/${locationId}/refrigerators`, { name: newFridgeName });
-      const refetch = await API.get(`/locations/${locationId}`);
+      const res = await API.post(`/locations/${locationId}/refrigerators`, { name: newFridgeName }, { timeout: 12000 });
+      const refetch = await API.get(`/locations/${locationId}`, { timeout: 12000 });
       setLocationData(refetch.data);
       setNewFridgeName('');
       setToast({ type: 'ok', text: res.data.message || 'Refrigerador creado.' });
@@ -186,8 +299,8 @@ function LocationPage() {
     const n = prompt('Enter new fridge name', fridge.name);
     if (!n) return;
     try {
-      const res = await API.put(`/locations/${locationId}/refrigerators/${fridge._id}`, { newName: n });
-      const refetch = await API.get(`/locations/${locationId}`);
+      const res = await API.put(`/locations/${locationId}/refrigerators/${fridge._id}`, { newName: n }, { timeout: 12000 });
+      const refetch = await API.get(`/locations/${locationId}`, { timeout: 12000 });
       setLocationData(refetch.data);
       setToast({ type: 'ok', text: res.data.message || 'Fridge renamed.' });
     } catch {
@@ -198,8 +311,8 @@ function LocationPage() {
   const handleDeleteFridge = async (fridge) => {
     if (!window.confirm(`Are you sure you want to delete fridge ${fridge.name}?`)) return;
     try {
-      await API.delete(`/locations/${locationId}/refrigerators/${fridge._id}`);
-      const refetch = await API.get(`/locations/${locationId}`);
+      await API.delete(`/locations/${locationId}/refrigerators/${fridge._id}`, { timeout: 12000 });
+      const refetch = await API.get(`/locations/${locationId}`, { timeout: 12000 });
       setLocationData(refetch.data);
       setToast({ type: 'ok', text: 'Fridge deleted!' });
     } catch {
@@ -207,9 +320,9 @@ function LocationPage() {
     }
   };
 
-  // ---- edición y (opcional) autosave con debounce ----
-  const queueAutoSave = (fridgeId, delay = 1200) => {
-    // borra debounce previo
+  // ---- edición y autosave con debounce + cancelación ----
+  const queueAutoSave = (fridgeId, delay = 800) => {
+    // limpia debounce previo
     if (debouncers.current[fridgeId]) {
       clearTimeout(debouncers.current[fridgeId]);
       debouncers.current[fridgeId] = null;
@@ -238,6 +351,7 @@ function LocationPage() {
     const changed = Object.keys(edits).filter(
       (p) => String(edits[p] ?? '') !== String(currentBase[p] ?? '')
     );
+
     if (changed.length === 0) {
       if (!silentOverlay) setToast({ type: 'ok', text: 'No hay cambios que guardar.' });
       return;
@@ -246,31 +360,35 @@ function LocationPage() {
     try {
       if (!silentOverlay) setSavingFridgeId(fridgeId);
 
-      // marca saving por fila
+      // marca saving por fila (para spinners)
       setRowSaving((prev) => ({
         ...prev,
-        [fridgeId]: { ...(prev[fridgeId] || {}), ...Object.fromEntries(changed.map((p) => [p, true])) },
+        [fridgeId]: {
+          ...(prev[fridgeId] || {}),
+          ...Object.fromEntries(changed.map((p) => [p, true])),
+        },
       }));
 
-      // paraleliza PUTs para acelerar
-      await Promise.all(
-        changed.map((pName) => {
-          const quantity = parseInt(edits[pName] || '0', 10);
-          return API.put(
-            `/locations/${locationId}/refrigerators/${fridgeId}/products`,
-            { productName: pName, quantity }
-          );
-        })
+      // ✅ UN SOLO REQUEST (batch)
+      await API.put(
+        `/locations/${locationId}/refrigerators/${fridgeId}/products/batch`,
+        {
+          updates: changed.map((pName) => ({
+            productName: pName,
+            quantity: parseInt(edits[pName] || '0', 10), // grabamos 0 aunque el input muestre ''
+          })),
+        },
+        { timeout: 12000 }
       );
 
-      // refresca datos (baseline nuevo)
-      const refetch = await API.get(`/locations/${locationId}`);
+      // Refetch para alinear baseline/edits
+      const refetch = await API.get(`/locations/${locationId}`, { timeout: 15000 });
       setLocationData(refetch.data);
 
-      // alinear edits con baseline
+      // Realinea los inputs con los valores actuales ('' si es 0)
       setFridgeEdits((prev) => {
         const next = { ...prev };
-        const fr = refetch.data.refrigerators.find((f) => f._id === fridgeId);
+        const fr = refetch.data.refrigerators.find((f) => String(f._id) === String(fridgeId));
         if (fr) {
           const updated = {};
           fr.products.forEach((p) => {
@@ -286,7 +404,8 @@ function LocationPage() {
       console.error(err);
       setToast({ type: 'error', text: 'Error al guardar cambios.' });
     } finally {
-      if (!silentOverlay) setSavingFridgeId(null);
+      if (!silentOverlay && savingFridgeId === fridgeId) setSavingFridgeId(null);
+
       // limpia flags de fila
       setRowSaving((prev) => {
         const copy = { ...prev };
@@ -315,6 +434,20 @@ function LocationPage() {
       return nv;
     });
   };
+
+  // Limpieza total en unmount: timers y requests en vuelo
+  useEffect(() => {
+    return () => {
+      // limpia todos los debouncers
+      Object.values(debouncers.current).forEach((t) => t && clearTimeout(t));
+      debouncers.current = {};
+      // aborta todas las requests en vuelo
+      Object.values(ctrlRefs.current).forEach((ac) => {
+        try { ac.abort(); } catch {}
+      });
+      ctrlRefs.current = {};
+    };
+  }, []);
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -359,6 +492,26 @@ function LocationPage() {
       </div>
 
       <h2>Location: {locationData.name}</h2>
+
+      {/* Inventario (sesión) */}
+      <div className="card" style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <strong style={{ marginRight: 8 }}>Inventario</strong>
+        {!invActive ? (
+          <button onClick={handleStartInventory} disabled={invBusy}>
+            {invBusy ? 'Iniciando…' : 'Iniciar sesión (Inicial)'}
+          </button>
+        ) : (
+          <>
+            <span className="pill">
+              Sesión activa desde:&nbsp;
+              <b>{new Date(invActive.startedAt || Date.now()).toLocaleString()}</b>
+            </span>
+            <button onClick={handleCloseWithFinal} disabled={invBusy}>
+              {invBusy ? 'Guardando final…' : 'Cerrar con final'}
+            </button>
+          </>
+        )}
+      </div>
 
       {(role === 'admin' || role === 'superuser') && (
         <div className="flex-row stack-sm" style={{ marginBottom: '1rem' }}>
@@ -496,7 +649,7 @@ function LocationPage() {
                                   autoComplete="off"
                                   autoCorrect="off"
                                   spellCheck={false}
-                                  pattern="[0-9+\-*/xX÷\s]*"
+                                  pattern="[0-9+\\-*/xX÷\\s]*"
                                 />
                               </td>
                             </tr>
