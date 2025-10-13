@@ -2,11 +2,11 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import '../styles.css';
 
 /**
- * Cambios clave:
- * - pattern HTML SEGURO (sin '÷' y con '-' escapado), para evitar SyntaxError
- * - Internamente seguimos aceptando '÷' y lo normalizamos a '/'
- * - No sobrescribe draft mientras el input tiene foco
- * - Evalúa expresiones con prioridad (* / antes que + -)
+ * NumberInput sin `pattern` HTML (evita SyntaxError de regex en navegadores).
+ * Filtra y valida SOLO con JS:
+ *  - Acepta dígitos, espacios y operadores + - * / (incluye x, ×, ÷ -> se normalizan)
+ *  - No sobreescribe el draft mientras hay foco
+ *  - Enter / blur: commit de la expresión
  */
 const NumberInput = forwardRef(function NumberInput(
   { value, onChange, onEnter, min = 0, max = 999999, ...rest },
@@ -15,7 +15,7 @@ const NumberInput = forwardRef(function NumberInput(
   const inputRef = useRef(null);
   const [draft, setDraft] = useState(value ?? '');
 
-  // Heurística simple de móvil (solo para inputMode por defecto)
+  // Heurística simple de móvil
   const isMobile =
     typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const defaultInputMode = isMobile ? 'text' : 'decimal';
@@ -93,19 +93,16 @@ const NumberInput = forwardRef(function NumberInput(
     return String(clamped);
   };
 
-  // ✅ Regex helpers (permitimos ÷ en JS, pero NO en el pattern HTML)
-  const allowedPatternJS = /^[0-9xX+*/÷\s-]*$/;
-  const singleCharAllowedJS = /^[0-9xX+*/÷\s-]$/;
+  // Filtro de tecleo/pegado por JS (sin depender de pattern HTML)
+  const allowedChar = (ch) => /^[0-9xX+*/÷\s-]$/.test(ch);
 
-  // ✅ Pattern HTML SEGURO (sin '÷'; guion escapado)
-  const SAFE_HTML_PATTERN = '^[0-9xX+*/\\s\\-]*$';
-
-  // Tecleo
   const handleInputChange = (e) => {
     const text = e.target.value;
-    if (allowedPatternJS.test(text)) {
-      setDraft(text);
+    // Permitimos batch de texto si todos los chars son válidos
+    for (let i = 0; i < text.length; i++) {
+      if (!allowedChar(text[i])) return;
     }
+    setDraft(text);
   };
 
   const handlePaste = (e) => {
@@ -117,17 +114,18 @@ const NumberInput = forwardRef(function NumberInput(
 
   const handleBeforeInput = (e) => {
     if (e.data == null) return;
-    if (!singleCharAllowedJS.test(e.data)) e.preventDefault();
+    if (!allowedChar(e.data)) e.preventDefault();
   };
 
   const commit = () => {
     const res = evalExpr(draft);
     if (res == null) {
+      // Expresión inválida -> vuelve al value actual
       setDraft(value ?? '');
       return;
     }
     setDraft(res);
-    onChange?.(res);
+    onChange?.(res); // '' o número como string
   };
 
   const increment = () => {
@@ -154,9 +152,7 @@ const NumberInput = forwardRef(function NumberInput(
     }
   };
 
-  const handleBlur = () => {
-    commit();
-  };
+  const handleBlur = () => commit();
 
   return (
     <div className="custom-number-input">
@@ -172,14 +168,12 @@ const NumberInput = forwardRef(function NumberInput(
         onBeforeInput={handleBeforeInput}
         onPaste={handlePaste}
         inputMode={rest.inputMode ?? defaultInputMode}
-        // ⛑️ Pattern HTML seguro (sin ÷)
-        pattern={rest.pattern ?? SAFE_HTML_PATTERN}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
         enterKeyHint="done"
         aria-label="Cantidad"
-        {...rest}
+        {...rest} // ← seguimos permitiendo props extra (pero ya sin pattern)
       />
       <button type="button" className="plus-btn" onClick={increment}>+</button>
     </div>

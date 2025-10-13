@@ -28,7 +28,6 @@ function LocationSummaryPage() {
   const [hideEmptyAfterFilter, setHideEmptyAfterFilter] = useState(true);
   const [denseRows, setDenseRows] = useState(false);
 
-  // Resumen inventario por locación
   // { [locId]: { initial:{[prod]:num}, final:{[prod]:num}, transfer:{[prod]:+n|-n}, closed:boolean } }
   const [invSummaries, setInvSummaries] = useState({});
 
@@ -50,7 +49,8 @@ function LocationSummaryPage() {
       setLoading(true);
       setErrMsg('');
       try {
-        const r = await API.get('/dashboard/overview', { signal: controller.signal });
+        // ✅ Este endpoint ya te funcionaba
+        const r = await API.get('/dashboard/overview', { signal: controller.signal, timeout: 20000 });
         const data = r.data?.data || {};
         setStdOrder(Array.isArray(data.stdOrder) ? data.stdOrder : []);
         setCapacityMap(data.capacityMap || {});
@@ -58,24 +58,23 @@ function LocationSummaryPage() {
         const locs = Array.isArray(data.locations) ? data.locations : [];
         setLocations(locs);
         setSummaries(data.summaries || {});
-        setLoading(false);
 
-        // 🔁 Una vez que tengo locaciones, busco sesiones activas y su summary
-        // CORREGIDO: endpoints montados bajo /locations
-        // GET  /locations/inventory-sessions/active?locationId=...
-        // GET  /locations/inventory-sessions/:sessionId/summary
+        // 🔁 Sesiones activas + resumen de sesión
+        // ✅ Volvemos a los endpoints que ya usabas:
+        // GET /inventory-sessions/active?locationId=...
+        // GET /inventory-sessions/:sessionId/summary
         const invMap = {};
         await Promise.all(
           (locs || []).map(async (loc) => {
             try {
-              const activeRes = await API.get('/locations/inventory-sessions/active', {
+              const activeRes = await API.get('/inventory-sessions/active', {
                 params: { locationId: loc._id },
                 timeout: 12000,
               });
               const sess = activeRes.data?.session;
               if (!sess?._id) return;
 
-              const sumRes = await API.get(`/locations/inventory-sessions/${sess._id}/summary`, {
+              const sumRes = await API.get(`/inventory-sessions/${sess._id}/summary`, {
                 timeout: 15000,
               });
 
@@ -89,21 +88,26 @@ function LocationSummaryPage() {
               for (const row of rows) {
                 const name = row.productName;
                 initial[name] = Number(row.inicial) || 0;
+
                 if (row.final == null || Number.isNaN(Number(row.final))) {
-                  // sesión aún abierta -> no hay final
+                  // sesión abierta -> aún no hay final
                 } else {
                   final[name] = Number(row.final) || 0;
                 }
+
                 const net = (Number(row.entradas) || 0) - (Number(row.salidas) || 0);
                 if (net) transfer[name] = net;
               }
               invMap[loc._id] = { initial, final, transfer, closed };
             } catch (e) {
               // si algo falla para una locación, seguimos con las demás
+              // (no rompemos el resto)
             }
           })
         );
+
         setInvSummaries(invMap);
+        setLoading(false);
       } catch (e) {
         if (e?.name !== 'CanceledError') {
           console.error('Summary load error:', e);
@@ -238,19 +242,19 @@ function LocationSummaryPage() {
 
           const inv = invSummaries[loc._id] || {};
           const sessionClosed = !!inv.closed;
-          const showSalesCol = sessionClosed; // Ventas (sesión) solo si la sesión está cerrada
+          const showSalesCol = sessionClosed; // Ventas solo si la sesión está cerrada
 
           let rows = keys.map((prod) => {
             const current = Number(breakdown[prod] || 0);
             const cap = effectiveCapacityFor(loc, prod);
             const ratio = cap > 0 ? current / cap : NaN;
 
-            // Lectura de inicial / final / transfer (si existe sesión activa)
+            // Lectura de inicial / final / transfer (si existe sesión)
             const initial = Number(inv.initial?.[prod]);
             const final = Number(inv.final?.[prod]);
-            const transferNet = Number(inv.transfer?.[prod]); // puede ser + o -
+            const transferNet = Number(inv.transfer?.[prod]); // + / -
 
-            // Ventas (sesión) = Inicial − Final (solo si hay final)
+            // Ventas (sesión) = Inicial − Final (si hay final)
             const sales =
               Number.isFinite(initial) && Number.isFinite(final)
                 ? Math.max(0, initial - final)
