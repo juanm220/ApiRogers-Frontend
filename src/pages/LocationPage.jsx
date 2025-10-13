@@ -11,7 +11,6 @@ import Footer from '../components/Footer';
 function LocationPage() {
   const { locationId } = useParams();
   const navigate = useNavigate();
-  const standardProducts = useSelector((s) => s.products.standardProducts);
   const token = useSelector((s) => s.auth.token);
   const role = useSelector((s) => s.auth.role);
 
@@ -26,8 +25,7 @@ function LocationPage() {
   const [newFridgeName, setNewFridgeName] = useState('');
   const [standardOrder, setStandardOrder] = useState([]);
 
-  // Ediciones locales (string)
-  // shape: { [fridgeId]: { [productName]: "12" } }
+  // Ediciones locales (string) => { [fridgeId]: { [productName]: "12" } }
   const [fridgeEdits, setFridgeEdits] = useState({});
 
   // UI states
@@ -38,13 +36,20 @@ function LocationPage() {
     return v ? v === '1' : false;
   });
 
-  // Guardado por fila (spinner junto al input): { [fridgeId]: { [productName]: boolean } }
-  const [rowSaving, setRowSaving] = useState({});
+  const isStableNumber = (s) => /^\s*\d+\s*$/.test(String(s ?? ''));
+
+  // refs globales para coalescer autosaves por nevera
+  const inFlight = useRef({});  // { [fridgeId]: true|false }
+  const pending  = useRef({});  // { [fridgeId]: true|false }
+
+  // Guardado por fila (spinner junto al input)
+  const [rowSaving, setRowSaving] = useState({}); // { [fridgeId]: { [productName]: boolean } }
+
+  // dirty map para no pisar campos que el usuario sigue editando
+  const [dirtyMap, setDirtyMap] = useState({}); // { [fridgeId]: { [productName]: true } }
 
   // Timers de debounce por fridge
   const debouncers = useRef({}); // { [fridgeId]: numberTimeoutId }
-  // AbortController por fridge (para cancelar el request anterior si llega uno nuevo)
-  const ctrlRefs = useRef({}); // { [fridgeId]: AbortController }
 
   // refs para focus secuencial
   const inputRefs = useRef({});
@@ -86,11 +91,13 @@ function LocationPage() {
     return false;
   }, [fridgeEdits, baseline]);
 
-  // proteger salida si hay cambios o guardados en curso/cola
+  // proteger salida si hay guardados en curso/cola
   const hasAnySaving =
     savingFridgeId != null ||
     Object.values(rowSaving).some((m) => Object.values(m || {}).some(Boolean)) ||
     Object.values(debouncers.current).some(Boolean);
+    Object.values(inFlight.current).some(Boolean) ||  
+    Object.values(pending.current).some(Boolean);  
 
   useEffect(() => {
     const beforeUnload = (e) => {
@@ -126,6 +133,7 @@ function LocationPage() {
           });
         }
         setFridgeEdits(initEdits);
+        setDirtyMap({}); // limpiamos al cargar
       } catch (err) {
         if (err?.name !== 'CanceledError') {
           console.error('Error fetching location data:', err);
@@ -150,16 +158,14 @@ function LocationPage() {
     })();
   }, [token]);
 
-  // ======== INVENTARIO: Sesión activa ========
+  // ======== INVENTARIO: Sesión activa (solo iniciar/cerrar) ========
 
-  // Helper: carga la sesión activa (usa ?locationId=)
   async function fetchActiveInv() {
     try {
       const r = await API.get(`/locations/inventory-sessions/active`, {
         params: { locationId },
         timeout: 12000,
       });
-      // backend retorna { ok, session: {...} } o { ok, session: null }
       setInvActive(r.data?.session || null);
     } catch (e) {
       console.error('fetchActiveInv error', e);
@@ -167,17 +173,12 @@ function LocationPage() {
     }
   }
 
-  // Efecto: traer sesión activa al cargar página
   useEffect(() => {
     if (!locationId) return;
     fetchActiveInv();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
 
-  // Construye el finalSnapshot a partir del estado actual de la UI
   function buildFinalSnapshotFromUI() {
-    // Estructura esperada por backend:
-    // [{ fridgeId, products: [{ productName, quantity }, ...] }]
     const out = [];
     for (const fr of (locationData?.refrigerators || [])) {
       const editsForFr = fridgeEdits[fr._id] || {};
@@ -191,25 +192,15 @@ function LocationPage() {
     return out;
   }
 
-  // Handlers de inventario
   async function handleStartInventory() {
     if (invBusy) return;
-
-    // (Opcional) avisar si hay cambios sin guardar
     if (hasUnsaved) {
-      const ok = window.confirm(
-        'Tienes cambios sin guardar. ¿Iniciar sesión de inventario igualmente?'
-      );
+      const ok = window.confirm('Tienes cambios sin guardar. ¿Iniciar sesión de inventario igualmente?');
       if (!ok) return;
     }
-
     setInvBusy(true);
     try {
-      await API.post(
-        `/locations/inventory-sessions/start`,
-        { locationId }, // body
-        { timeout: 15000 }
-      );
+      await API.post(`/locations/inventory-sessions/start`, { locationId }, { timeout: 15000 });
       await fetchActiveInv();
       setToast({ type: 'ok', text: 'Sesión de inventario inicial iniciada.' });
     } catch (e) {
@@ -222,30 +213,15 @@ function LocationPage() {
 
   async function handleCloseWithFinal() {
     if (invBusy || !invActive?._id) return;
-
-    // Avisar si hay cambios sin guardar; cerraremos usando lo que ves en la UI
     if (hasUnsaved) {
-      const ok = window.confirm(
-        'Tienes cambios sin guardar. ¿Cerrar sesión e incluir lo que ves ahora como inventario final?'
-      );
+      const ok = window.confirm('Tienes cambios sin guardar. ¿Cerrar sesión e incluir lo que ves ahora como inventario final?');
       if (!ok) return;
     }
-
     setInvBusy(true);
     try {
-      // 1) Construir finalSnapshot desde la UI actual
       const finalSnapshot = buildFinalSnapshotFromUI();
-
-      // 2) Enviar al backend (tu endpoint espera { finalSnapshot })
-      await API.patch(
-        `/locations/inventory-sessions/${invActive._id}/final`,
-        { finalSnapshot },
-        { timeout: 20000 }
-      );
-
-      // 3) Refrescar sesión activa (debería quedar en null al cerrar)
+      await API.patch(`/locations/inventory-sessions/${invActive._id}/final`, { finalSnapshot }, { timeout: 20000 });
       await fetchActiveInv();
-
       setToast({ type: 'ok', text: 'Inventario final registrado y sesión cerrada.' });
     } catch (e) {
       console.error(e);
@@ -320,26 +296,57 @@ function LocationPage() {
     }
   };
 
-  // ---- edición y autosave con debounce + cancelación ----
-  const queueAutoSave = (fridgeId, delay = 800) => {
-    // limpia debounce previo
+  // ---- edición y autosave con debounce ----
+  // Debounce más largo y coalescencia por nevera
+  const queueAutoSave = (fridgeId, delay = 1500) => {
+    // limpiar timer previo
     if (debouncers.current[fridgeId]) {
       clearTimeout(debouncers.current[fridgeId]);
       debouncers.current[fridgeId] = null;
     }
-    // agenda
+    // programar nuevo intento
     debouncers.current[fridgeId] = setTimeout(async () => {
       debouncers.current[fridgeId] = null;
-      await doSaveFridge(fridgeId, { silentOverlay: true });
+
+      // si ya hay un guardado en vuelo, marca "pendiente" y sal
+      if (inFlight.current[fridgeId]) {
+        pending.current[fridgeId] = true;
+        return;
+      }
+
+      // ejecuta un guardado; si mientras tanto llegaron más cambios, hará 1 ciclo extra
+      inFlight.current[fridgeId] = true;
+      try {
+        await doSaveFridge(fridgeId, { silentOverlay: true });
+      } finally {
+        inFlight.current[fridgeId] = false;
+        if (pending.current[fridgeId]) {
+          pending.current[fridgeId] = false;
+          // dispara un segundo guardado inmediato para consolidar lo pendiente (sin debounce)
+          inFlight.current[fridgeId] = true;
+          try {
+            await doSaveFridge(fridgeId, { silentOverlay: true });
+          } finally {
+            inFlight.current[fridgeId] = false;
+          }
+        }
+      }
     }, delay);
   };
+
 
   const handleQuantityChange = (fridgeId, productName, newVal) => {
     setFridgeEdits((prev) => ({
       ...prev,
       [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: newVal },
     }));
-    if (autoSave) {
+    setDirtyMap((prev) => ({
+      ...prev,
+      [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: true },
+    }));
+
+    // 🔐 Solo autosave si el valor es un número "estable" (evita 12+3, 5*)
+    if (autoSave && isStableNumber(newVal)) {
       queueAutoSave(fridgeId);
     }
   };
@@ -357,10 +364,15 @@ function LocationPage() {
       return;
     }
 
+    // snapshot de valores enviados (para reconciliar sin pisar entradas nuevas)
+    const payloadMap = new Map(
+      changed.map((pName) => [pName, parseInt(edits[pName] || '0', 10)])
+    );
+
     try {
       if (!silentOverlay) setSavingFridgeId(fridgeId);
 
-      // marca saving por fila (para spinners)
+      // spinners por fila
       setRowSaving((prev) => ({
         ...prev,
         [fridgeId]: {
@@ -375,29 +387,78 @@ function LocationPage() {
         {
           updates: changed.map((pName) => ({
             productName: pName,
-            quantity: parseInt(edits[pName] || '0', 10), // grabamos 0 aunque el input muestre ''
+            quantity: payloadMap.get(pName) || 0,
           })),
         },
         { timeout: 12000 }
       );
 
-      // Refetch para alinear baseline/edits
-      const refetch = await API.get(`/locations/${locationId}`, { timeout: 15000 });
-      setLocationData(refetch.data);
-
-      // Realinea los inputs con los valores actuales ('' si es 0)
-      setFridgeEdits((prev) => {
-        const next = { ...prev };
-        const fr = refetch.data.refrigerators.find((f) => String(f._id) === String(fridgeId));
-        if (fr) {
-          const updated = {};
-          fr.products.forEach((p) => {
-            updated[p.productName] = p.quantity === 0 ? '' : String(p.quantity);
+      if (silentOverlay) {
+        // 🔁 AUTOSAVE: reconciliar localmente sin refetch
+        setLocationData((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev };
+          next.refrigerators = (prev.refrigerators || []).map((fr) => {
+            if (String(fr._id) !== String(fridgeId)) return fr;
+            const copy = { ...fr, products: [...(fr.products || [])] };
+            copy.products = copy.products.map((p) => {
+              if (payloadMap.has(p.productName)) {
+                return { ...p, quantity: payloadMap.get(p.productName) };
+              }
+              return p;
+            });
+            return copy;
           });
-          next[fridgeId] = updated;
-        }
-        return next;
-      });
+          return next;
+        });
+
+        setFridgeEdits((prev) => {
+          const next = { ...prev };
+          const fr = { ...(next[fridgeId] || {}) };
+          for (const pName of changed) {
+            const sent = String(payloadMap.get(pName) || 0);
+            const currentUI = String(fr[pName] ?? '');
+            if (currentUI === '' || currentUI === sent) {
+              fr[pName] = Number(sent) === 0 ? '' : sent;
+              setDirtyMap((dm) => ({
+                ...dm,
+                [fridgeId]: { ...(dm[fridgeId] || {}), [pName]: false },
+              }));
+            }
+          }
+          next[fridgeId] = fr;
+          return next;
+        });
+      } else {
+        // 🧾 MANUAL: refetch y realinea (manteniendo campos dirty)
+        const refetch = await API.get(`/locations/${locationId}`, { timeout: 15000 });
+        const fresh = refetch.data;
+        setLocationData(fresh);
+
+        setFridgeEdits((prev) => {
+          const next = { ...prev };
+          for (const fr of (fresh.refrigerators || [])) {
+            const frId = String(fr._id);
+            const frDirty = dirtyMap[frId] || {};
+            const updated = { ...(next[frId] || {}) };
+            fr.products.forEach((p) => {
+              if (!frDirty[p.productName]) {
+                updated[p.productName] = p.quantity === 0 ? '' : String(p.quantity);
+              }
+            });
+            next[frId] = updated;
+          }
+          return next;
+        });
+
+        setDirtyMap((prev) => {
+          const copy = { ...prev };
+          const d = { ...(copy[fridgeId] || {}) };
+          changed.forEach((p) => (d[p] = false));
+          copy[fridgeId] = d;
+          return copy;
+        });
+      }
 
       if (!silentOverlay) setToast({ type: 'ok', text: 'Cambios guardados.' });
     } catch (err) {
@@ -406,7 +467,6 @@ function LocationPage() {
     } finally {
       if (!silentOverlay && savingFridgeId === fridgeId) setSavingFridgeId(null);
 
-      // limpia flags de fila
       setRowSaving((prev) => {
         const copy = { ...prev };
         if (copy[fridgeId]) {
@@ -418,14 +478,21 @@ function LocationPage() {
   };
 
   const handleSaveFridge = async (fridge) => {
-    // si hay debounce pendiente, ejecútalo ya
+    // cancela cualquier debounce pendiente
     if (debouncers.current[fridge._id]) {
       clearTimeout(debouncers.current[fridge._id]);
       debouncers.current[fridge._id] = null;
     }
-    await doSaveFridge(fridge._id, { silentOverlay: false });
-  };
 
+    // ✅ espera si hay un autosave en vuelo para esta nevera
+    while (inFlight.current[fridge._id]) {
+      // pequeño sleep
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+  await doSaveFridge(fridge._id, { silentOverlay: false });
+  };
   // toggle autosave persistido
   const toggleAutosave = () => {
     setAutoSave((v) => {
@@ -435,17 +502,13 @@ function LocationPage() {
     });
   };
 
-  // Limpieza total en unmount: timers y requests en vuelo
-  useEffect(() => {
+  // Limpieza total en unmount: timers
+   useEffect(() => {
     return () => {
-      // limpia todos los debouncers
       Object.values(debouncers.current).forEach((t) => t && clearTimeout(t));
       debouncers.current = {};
-      // aborta todas las requests en vuelo
-      Object.values(ctrlRefs.current).forEach((ac) => {
-        try { ac.abort(); } catch {}
-      });
-      ctrlRefs.current = {};
+      inFlight.current = {};
+      pending.current = {};
     };
   }, []);
 
@@ -458,7 +521,6 @@ function LocationPage() {
     <div className="main-container">
       <NavBar />
 
-      {/* Aviso cambios sin guardar */}
       {(hasUnsaved || hasAnySaving) && (
         <div
           role="status"
@@ -478,7 +540,6 @@ function LocationPage() {
         </div>
       )}
 
-      {/* Toggle de autosave (global en la page) */}
       <div className="flex-row" style={{ gap: 8, marginBottom: 12 }}>
         <label className="chip-radio" style={{ cursor: 'pointer' }}>
           <input
@@ -541,6 +602,8 @@ function LocationPage() {
           {locationData.refrigerators.map((fridge) => {
             const disabled = savingFridgeId === fridge._id;
             const thisRowSaving = rowSaving[fridge._id] || {};
+            const thisDirty = dirtyMap[fridge._id] || {};
+
             return (
               <section key={fridge._id} className="card fridge-card" aria-busy={disabled}>
                 <header className="fridge-head">
@@ -611,10 +674,10 @@ function LocationPage() {
                             <tr key={prod.productName}>
                               <td>
                                 {prod.productName}
-                                {savingThisRow && (
+                                {(savingThisRow || thisDirty[prod.productName]) && (
                                   <span
-                                    aria-label="Guardando…"
-                                    title="Guardando…"
+                                    aria-label={savingThisRow ? 'Guardando…' : 'Editando…'}
+                                    title={savingThisRow ? 'Guardando…' : 'Editando…'}
                                     style={{
                                       display: 'inline-block',
                                       width: 12,
@@ -644,12 +707,11 @@ function LocationPage() {
                                     if (nextEl?.focus) nextEl.focus();
                                   }}
                                   aria-label={`Cantidad de ${prod.productName}`}
-                                  // teclado móvil con '+'
+                                  pattern="^[0-9xX+*/÷\\s-]*$"
                                   inputMode={isMobile ? 'text' : 'decimal'}
                                   autoComplete="off"
                                   autoCorrect="off"
                                   spellCheck={false}
-                                  pattern="[0-9+\\-*/xX÷\\s]*"
                                 />
                               </td>
                             </tr>

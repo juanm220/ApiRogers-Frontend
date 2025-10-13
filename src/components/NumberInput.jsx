@@ -8,6 +8,11 @@ import '../styles.css';
  * - Enter / blur => evalúa y fija el valor (string)
  * - Botones +/- siguen funcionando
  * - min/max: clamp del resultado
+ *
+ * Cambios clave:
+ * - pattern seguro (guion al final) para evitar "Range out of order"
+ * - no sobrescribe el draft mientras el input tiene foco
+ * - validadores internos usan regex sin guion en medio del class
  */
 const NumberInput = forwardRef(function NumberInput(
   {
@@ -24,7 +29,9 @@ const NumberInput = forwardRef(function NumberInput(
   const [draft, setDraft] = useState(value ?? '');
 
   // Heurística simple de móvil (solo para inputMode por defecto)
-  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isMobile =
+    typeof navigator !== 'undefined' &&
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const defaultInputMode = isMobile ? 'text' : 'decimal';
 
   useImperativeHandle(ref, () => ({
@@ -33,8 +40,13 @@ const NumberInput = forwardRef(function NumberInput(
     node: inputRef.current,
   }));
 
+  // ⛑️ IMPORTANTE: no sobrescribir mientras el input tiene foco
   useEffect(() => {
-    setDraft(value ?? '');
+    const el = inputRef.current;
+    const hasFocus = el && document.activeElement === el;
+    if (!hasFocus) {
+      setDraft(value ?? '');
+    }
   }, [value]);
 
   // Eval con prioridad (* / antes que + -), admite x, ×, ÷
@@ -46,7 +58,8 @@ const NumberInput = forwardRef(function NumberInput(
 
     if (normalized === '') return '';
 
-    if (!/^[\d+\-*/]+$/.test(normalized)) return null;
+    // Solo dígitos y operadores +-*/
+    if (!/^[\d+*/-]+$/.test(normalized)) return null;
 
     const tokens = normalized.match(/(\d+|[+\-*/])/g);
     if (!tokens) return null;
@@ -98,34 +111,39 @@ const NumberInput = forwardRef(function NumberInput(
     return String(clamped);
   };
 
+  // Regex helpers sin rangos ambiguos (guion al final)
+  const allowedPattern = /^[0-9xX+*/÷\s-]*$/;
+  const singleCharAllowed = /^[0-9xX+*/÷\s-]$/;
+
   // Tecleo: dígitos + operadores + espacios
   const handleInputChange = (e) => {
     const text = e.target.value;
-    if (/^[\d+\-*/xX÷\s]*$/.test(text)) {
+    if (allowedPattern.test(text)) {
       setDraft(text);
     }
   };
 
   const handlePaste = (e) => {
     const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
-    const cleaned = text.replace(/[^\d+\-*/xX÷\s]/g, '');
+    const cleaned = text.replace(/[^0-9xX+*/÷\s-]/g, '');
     e.preventDefault();
     setDraft((prev) => (prev || '') + cleaned);
   };
 
   const handleBeforeInput = (e) => {
     if (e.data == null) return;
-    if (!/^[\d+\-*/xX÷\s]$/.test(e.data)) e.preventDefault();
+    if (!singleCharAllowed.test(e.data)) e.preventDefault();
   };
 
   const commit = () => {
     const res = evalExpr(draft);
     if (res == null) {
+      // Si la expresión es inválida, volvemos al value actual
       setDraft(value ?? '');
       return;
     }
     setDraft(res);
-    onChange(res);
+    onChange?.(res);
   };
 
   const increment = () => {
@@ -133,7 +151,7 @@ const NumberInput = forwardRef(function NumberInput(
     const n = Math.min(max, parseInt(base || '0', 10) + 1);
     const s = String(n);
     setDraft(s);
-    onChange(s);
+    onChange?.(s);
   };
 
   const decrement = () => {
@@ -141,14 +159,14 @@ const NumberInput = forwardRef(function NumberInput(
     const n = Math.max(min, parseInt(base || '0', 10) - 1);
     const s = String(n);
     setDraft(s);
-    onChange(s);
+    onChange?.(s);
   };
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       commit();
-      if (onEnter) onEnter();
+      onEnter?.();
     }
   };
 
@@ -168,12 +186,11 @@ const NumberInput = forwardRef(function NumberInput(
         onBeforeInput={handleBeforeInput}
         onPaste={handlePaste}
 
-        /* 👇 Por defecto: 'text' en móvil para que aparezca '+'; 'decimal' en desktop.
-              Si el padre pasa inputMode, tiene prioridad. */
+        // Móvil: 'text' para poder tipear '+'. Desktop: 'decimal'
         inputMode={rest.inputMode ?? defaultInputMode}
 
-        /* Alineado con lo que soporta el parser (+ - * / x ÷ y espacios) */
-        pattern={rest.pattern ?? '[0-9+\\-*/xX÷\\s]*'}
+        // ✅ pattern seguro por defecto; el padre puede sobreescribirlo
+        pattern={rest.pattern ?? '^[0-9xX+*/÷\\s-]*$'}
 
         autoComplete="off"
         autoCorrect="off"

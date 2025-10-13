@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react'; 
 import API from '../apiService';
 import NavBar from '../components/NavBar';
 import Footer from '../components/Footer';
@@ -15,6 +15,16 @@ export default function TransfersPage() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // Derivados
+  const totalUnits = useMemo(() => {
+    return stdOrder.reduce((acc, name) => {
+      const q = parseInt(draft[name] || '0', 10);
+      return acc + (isNaN(q) ? 0 : q);
+    }, 0);
+  }, [stdOrder, draft]);
+
+  const disabled = busy || !fromLoc || !toLoc || fromLoc === toLoc || totalUnits <= 0;
+
   useEffect(() => {
     const ac = new AbortController();
     (async () => {
@@ -25,7 +35,7 @@ export default function TransfersPage() {
         ]);
         setLocations(Array.isArray(locRes.data) ? locRes.data : []);
         const list = stdRes.data?.items ?? [];
-        setStdOrder(list);
+        setStdOrder(Array.isArray(list) ? list : []);
       } catch (e) {
         console.error('Transfers init load error', e);
       }
@@ -33,10 +43,22 @@ export default function TransfersPage() {
     return () => ac.abort();
   }, []);
 
-  const disabled = busy || !fromLoc || !toLoc || fromLoc === toLoc;
-
   function setQty(name, val) {
-    setDraft((prev) => ({ ...prev, [name]: val }));
+    // Acepta vacío, clamp >= 0
+    const v = String(val ?? '').replace(/[^\d]/g, '');
+    setDraft((prev) => ({ ...prev, [name]: v }));
+  }
+
+  function clearAll() {
+    setDraft({});
+  }
+
+  function swapLocs() {
+    setFromLoc((prev) => {
+      const f = prev;
+      setToLoc(f);
+      return toLoc;
+    });
   }
 
   async function handleSubmit(e) {
@@ -73,11 +95,21 @@ export default function TransfersPage() {
       setDraft({});
     } catch (e) {
       console.error(e);
-      setToast({ type: 'error', text: 'No se pudo registrar la transferencia.' });
+      const msg = e?.response?.data?.message || 'No se pudo registrar la transferencia.';
+      setToast({ type: 'error', text: msg });
     } finally {
       setBusy(false);
     }
   }
+
+  const fromName = useMemo(
+    () => locations.find((l) => String(l._id) === String(fromLoc))?.name || '',
+    [locations, fromLoc]
+  );
+  const toName = useMemo(
+    () => locations.find((l) => String(l._id) === String(toLoc))?.name || '',
+    [locations, toLoc]
+  );
 
   return (
     <div className="main-container">
@@ -85,7 +117,7 @@ export default function TransfersPage() {
       <h2 style={{ marginTop: 0 }}>Transferencias</h2>
 
       <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: 12 }}>
-        <div className="grid-2">
+        <div className="grid-3" style={{ alignItems: 'end', gap: 8 }}>
           <div>
             <label>Desde (Locación)</label>
             <select value={fromLoc} onChange={(e) => setFromLoc(e.target.value)}>
@@ -95,6 +127,20 @@ export default function TransfersPage() {
               ))}
             </select>
           </div>
+
+          <div style={{ display: 'grid' }}>
+            <button
+              type="button"
+              onClick={swapLocs}
+              className="btn btn--secondary"
+              title="Intercambiar"
+              style={{ marginTop: 22 }}
+              disabled={busy}
+            >
+              ⇄ Intercambiar
+            </button>
+          </div>
+
           <div>
             <label>Hacia (Locación)</label>
             <select value={toLoc} onChange={(e) => setToLoc(e.target.value)}>
@@ -105,6 +151,14 @@ export default function TransfersPage() {
             </select>
           </div>
         </div>
+
+        {(fromName || toName) && (
+          <div className="pill-row" style={{ gap: 8 }}>
+            {fromName && <span className="pill">Desde: <b>{fromName}</b></span>}
+            {toName && <span className="pill">Hacia: <b>{toName}</b></span>}
+            <span className="pill">Total unidades: <b>{totalUnits}</b></span>
+          </div>
+        )}
 
         <div className="table-wrap table-wrap--shadow">
           <table className="table-excel" style={{ minWidth: 560 }}>
@@ -120,7 +174,9 @@ export default function TransfersPage() {
                   <td>{name}</td>
                   <td className="num">
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
                       min="0"
                       value={draft[name] ?? ''}
                       onChange={(e) => setQty(name, e.target.value)}
@@ -134,9 +190,12 @@ export default function TransfersPage() {
           </table>
         </div>
 
-        <div>
+        <div className="flex-row" style={{ gap: 8 }}>
           <button type="submit" disabled={disabled}>
             {busy ? 'Registrando…' : 'Registrar transferencia'}
+          </button>
+          <button type="button" className="btn btn--secondary" onClick={clearAll} disabled={busy}>
+            Limpiar
           </button>
         </div>
       </form>
