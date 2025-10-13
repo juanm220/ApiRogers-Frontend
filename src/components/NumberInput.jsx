@@ -97,13 +97,12 @@ const NumberInput = forwardRef(function NumberInput(
   const allowedChar = (ch) => /^[0-9xX+*/÷\s-]$/.test(ch);
 
   const handleInputChange = (e) => {
-    const text = e.target.value;
-    // Permitimos batch de texto si todos los chars son válidos
-    for (let i = 0; i < text.length; i++) {
-      if (!allowedChar(text[i])) return;
-    }
-    setDraft(text);
-  };
+  const text = String(e.target.value ?? '');
+  for (let i = 0; i < text.length; i++) {
+    if (!allowedChar(text[i])) return; // ignora cambios inválidos
+  }
+  setDraft(text);
+};
 
   const handlePaste = (e) => {
     const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
@@ -120,12 +119,13 @@ const NumberInput = forwardRef(function NumberInput(
   const commit = () => {
     const res = evalExpr(draft);
     if (res == null) {
-      // Expresión inválida -> vuelve al value actual
-      setDraft(value ?? '');
+      // inválido → vuelve al value actual (normalizado a string)
+      setDraft(String(value ?? ''));
       return;
     }
+    // res es '' (vacío) o un número en string
     setDraft(res);
-    onChange?.(res); // '' o número como string
+    onChange?.(res);
   };
 
   const increment = () => {

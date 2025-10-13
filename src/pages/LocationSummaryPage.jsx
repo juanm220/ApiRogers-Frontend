@@ -42,15 +42,15 @@ function LocationSummaryPage() {
     return typeof i === 'number' ? i : 9999;
   };
 
-  // Carga principal
-  useEffect(() => {
+// Carga principal
+    useEffect(() => {
     const controller = new AbortController();
     (async () => {
-      setLoading(true);
-      setErrMsg('');
-      try {
-        // ✅ Este endpoint ya te funcionaba
-        const r = await API.get('/dashboard/overview', { signal: controller.signal, timeout: 20000 });
+        setLoading(true);
+        setErrMsg('');
+        try {
+        // Dashboard overview
+        const r = await API.get('/dashboard/overview', { signal: controller.signal });
         const data = r.data?.data || {};
         setStdOrder(Array.isArray(data.stdOrder) ? data.stdOrder : []);
         setCapacityMap(data.capacityMap || {});
@@ -58,66 +58,62 @@ function LocationSummaryPage() {
         const locs = Array.isArray(data.locations) ? data.locations : [];
         setLocations(locs);
         setSummaries(data.summaries || {});
+        setLoading(false);
 
-        // 🔁 Sesiones activas + resumen de sesión
-        // ✅ Volvemos a los endpoints que ya usabas:
-        // GET /inventory-sessions/active?locationId=...
-        // GET /inventory-sessions/:sessionId/summary
+        // 🔁 Sesiones activas y summary (ENDPOINTS CORRECTOS BAJO /locations)
+        // GET  /locations/inventory-sessions/active?locationId=...
+        // GET  /locations/inventory-sessions/:sessionId/summary
         const invMap = {};
         await Promise.all(
-          (locs || []).map(async (loc) => {
+            (locs || []).map(async (loc) => {
             try {
-              const activeRes = await API.get('/inventory-sessions/active', {
+                const activeRes = await API.get('/locations/inventory-sessions/active', {
                 params: { locationId: loc._id },
                 timeout: 12000,
-              });
-              const sess = activeRes.data?.session;
-              if (!sess?._id) return;
+                });
+                const sess = activeRes.data?.session;
+                if (!sess?._id) return;
 
-              const sumRes = await API.get(`/inventory-sessions/${sess._id}/summary`, {
+                const sumRes = await API.get(`/locations/inventory-sessions/${sess._id}/summary`, {
                 timeout: 15000,
-              });
+                });
 
-              const rows = sumRes.data?.data?.rows || [];
-              const closed = !!sumRes.data?.data?.closedAt;
+                const rows = sumRes.data?.data?.rows || [];
+                const closed = !!sumRes.data?.data?.closedAt;
 
-              // rows: [{ productName, inicial, entradas, salidas, final|null, diferencia|null }]
-              const initial = {};
-              const final = {};
-              const transfer = {};
-              for (const row of rows) {
+                const initial = {};
+                const final = {};
+                const transfer = {};
+                for (const row of rows) {
                 const name = row.productName;
                 initial[name] = Number(row.inicial) || 0;
-
                 if (row.final == null || Number.isNaN(Number(row.final))) {
-                  // sesión abierta -> aún no hay final
+                    // sesión abierta: sin final
                 } else {
-                  final[name] = Number(row.final) || 0;
+                    final[name] = Number(row.final) || 0;
                 }
-
                 const net = (Number(row.entradas) || 0) - (Number(row.salidas) || 0);
                 if (net) transfer[name] = net;
-              }
-              invMap[loc._id] = { initial, final, transfer, closed };
+                }
+                invMap[loc._id] = { initial, final, transfer, closed };
             } catch (e) {
-              // si algo falla para una locación, seguimos con las demás
-              // (no rompemos el resto)
+                // sigue con las demás locaciones
+                console.warn('Inv summary fetch error for loc', loc._id, e?.response?.status || e);
             }
-          })
+            })
         );
-
         setInvSummaries(invMap);
-        setLoading(false);
-      } catch (e) {
+        } catch (e) {
         if (e?.name !== 'CanceledError') {
-          console.error('Summary load error:', e);
-          setErrMsg('Error cargando el resumen');
-          setLoading(false);
+            console.error('Summary load error:', e);
+            setErrMsg('Error cargando el resumen');
+            setLoading(false);
         }
-      }
+        }
     })();
     return () => controller.abort();
-  }, []);
+    }, []);
+
 
   const colorForRatio = (ratio) => {
     if (!colorByCapacity || !Number.isFinite(ratio)) return 'inherit';

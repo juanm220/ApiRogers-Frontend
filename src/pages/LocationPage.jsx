@@ -26,7 +26,7 @@ function LocationPage() {
   const [standardOrder, setStandardOrder] = useState([]);
 
   // Última edición (quién y cuándo)
-  const [lastEdit, setLastEdit] = useState(null); // { at: ISO, actorName: string|null }
+  const [lastEdit, setLastEdit] = useState(null); // { at: ISO, actorName: string|null, source?:string }
 
   // Ediciones locales (string) => { [fridgeId]: { [productName]: "12" } }
   const [fridgeEdits, setFridgeEdits] = useState({});
@@ -147,7 +147,8 @@ function LocationPage() {
     })();
     return () => controller.abort();
   }, [locationId, token]);
-  // Cargar "último editor" (si el backend lo expone)
+
+  // Cargar "último editor" (opcional; si no existe la ruta, no muestra nada)
   useEffect(() => {
     if (!locationId) return;
     const ac = new AbortController();
@@ -161,7 +162,6 @@ function LocationPage() {
           setLastEdit(null);
         }
       } catch {
-        // silencioso: si no existe el endpoint o falla, no mostramos nada
         setLastEdit(null);
       }
     })();
@@ -324,22 +324,18 @@ function LocationPage() {
   // ---- edición y autosave con debounce ----
   // Debounce más largo y coalescencia por nevera
   const queueAutoSave = (fridgeId, delay = 1500) => {
-    // limpiar timer previo
     if (debouncers.current[fridgeId]) {
       clearTimeout(debouncers.current[fridgeId]);
       debouncers.current[fridgeId] = null;
     }
-    // programar nuevo intento
     debouncers.current[fridgeId] = setTimeout(async () => {
       debouncers.current[fridgeId] = null;
 
-      // si ya hay un guardado en vuelo, marca "pendiente" y sal
       if (inFlight.current[fridgeId]) {
         pending.current[fridgeId] = true;
         return;
       }
 
-      // ejecuta un guardado; si mientras tanto llegaron más cambios, hará 1 ciclo extra
       inFlight.current[fridgeId] = true;
       try {
         await doSaveFridge(fridgeId, { silentOverlay: true });
@@ -347,7 +343,6 @@ function LocationPage() {
         inFlight.current[fridgeId] = false;
         if (pending.current[fridgeId]) {
           pending.current[fridgeId] = false;
-          // dispara un segundo guardado inmediato para consolidar lo pendiente (sin debounce)
           inFlight.current[fridgeId] = true;
           try {
             await doSaveFridge(fridgeId, { silentOverlay: true });
@@ -369,7 +364,7 @@ function LocationPage() {
       [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: true },
     }));
 
-    // 🔐 Solo autosave si el valor es un número "estable" (evita 12+3, 5*)
+    // Solo autosave si es número estable (0, 1, 12...). Vacío no dispara autosave.
     if (autoSave && isStableNumber(newVal)) {
       queueAutoSave(fridgeId);
     }
@@ -502,13 +497,11 @@ function LocationPage() {
   };
 
   const handleSaveFridge = async (fridge) => {
-    // cancela cualquier debounce pendiente
     if (debouncers.current[fridge._id]) {
       clearTimeout(debouncers.current[fridge._id]);
       debouncers.current[fridge._id] = null;
     }
 
-    // espera si hay un autosave en vuelo para esta nevera
     while (inFlight.current[fridge._id]) {
       // eslint-disable-next-line no-await-in-loop
       await new Promise(r => setTimeout(r, 150));
@@ -578,12 +571,11 @@ function LocationPage() {
 
       <h2>Location: {locationData.name}</h2>
       {lastEdit && (
-      <div className="pill" title={lastEdit.source ? `Fuente: ${lastEdit.source}` : undefined} style={{ margin: '6px 0 12px' }}>
-        Última edición: <b>{lastEdit.actorName || '—'}</b>
-        <span style={{ opacity: .8 }}> · {new Date(lastEdit.at).toLocaleString()}</span>
-      </div>
+        <div className="pill" title={lastEdit.source ? `Fuente: ${lastEdit.source}` : undefined} style={{ margin: '6px 0 12px' }}>
+          Última edición: <b>{lastEdit.actorName || '—'}</b>
+          <span style={{ opacity: .8 }}> · {new Date(lastEdit.at).toLocaleString()}</span>
+        </div>
       )}
-
 
       {/* Inventario (sesión) */}
       <div className="card" style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
