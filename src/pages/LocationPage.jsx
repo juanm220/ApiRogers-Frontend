@@ -708,8 +708,6 @@ function LocationPage() {
                                     if (nextEl?.focus) nextEl.focus();
                                   }}
                                   aria-label={`Cantidad de ${prod.productName}`}
-                                  // ✅ pattern seguro: ÷ como \u00F7 y guion escapado
-                                  pattern="^[0-9xX+*/\\u00F7\\s\\-]*$"
                                   inputMode={isMobile ? 'text' : 'decimal'}
                                   autoComplete="off"
                                   autoCorrect="off"
