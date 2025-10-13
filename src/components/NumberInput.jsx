@@ -1,29 +1,15 @@
-// src/components/NumberInput.jsx
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import '../styles.css';
 
 /**
- * Soporta:
- * - Entrada numérica directa ("14")
- * - Expresiones con + - * /  (x, ×, ÷ también) ej: "12+2-3*2"
- * - Enter / blur => evalúa y fija el valor (string)
- * - Botones +/- siguen funcionando
- * - min/max: clamp del resultado
- *
  * Cambios clave:
- * - pattern seguro (÷ como \\u00F7 y guion escapado) para evitar errores con el flag /v
- * - no sobrescribe el draft mientras el input tiene foco
- * - validadores internos usan regex con \u00F7 (÷)
+ * - pattern HTML SEGURO (sin '÷' y con '-' escapado), para evitar SyntaxError
+ * - Internamente seguimos aceptando '÷' y lo normalizamos a '/'
+ * - No sobrescribe draft mientras el input tiene foco
+ * - Evalúa expresiones con prioridad (* / antes que + -)
  */
 const NumberInput = forwardRef(function NumberInput(
-  {
-    value,
-    onChange,
-    onEnter,
-    min = 0,
-    max = 999999,
-    ...rest
-  },
+  { value, onChange, onEnter, min = 0, max = 999999, ...rest },
   ref
 ) {
   const inputRef = useRef(null);
@@ -31,8 +17,7 @@ const NumberInput = forwardRef(function NumberInput(
 
   // Heurística simple de móvil (solo para inputMode por defecto)
   const isMobile =
-    typeof navigator !== 'undefined' &&
-    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const defaultInputMode = isMobile ? 'text' : 'decimal';
 
   useImperativeHandle(ref, () => ({
@@ -41,19 +26,19 @@ const NumberInput = forwardRef(function NumberInput(
     node: inputRef.current,
   }));
 
-  // ⛑️ No sobrescribir mientras el input tiene foco
+  // No sobrescribir mientras el input tiene foco
   useEffect(() => {
     const el = inputRef.current;
     const hasFocus = el && document.activeElement === el;
     if (!hasFocus) setDraft(value ?? '');
   }, [value]);
 
-  // Eval con prioridad (* / antes que + -), admite x, ×, ÷
+  // Eval con prioridad y normalización de x, ×, ÷
   const evalExpr = (str) => {
     const normalized = String(str || '')
       .replace(/\s+/g, '')
       .replace(/[xX×]/g, '*')
-      .replace(/\u00F7/g, '/'); // ÷
+      .replace(/÷/g, '/');
 
     if (normalized === '') return '';
 
@@ -84,7 +69,7 @@ const NumberInput = forwardRef(function NumberInput(
         const next = parseInt(fixed[i + 1], 10);
         if (prev == null || Number.isNaN(next)) return null;
         const a = parseInt(prev, 10);
-        const res = t === '*' ? (a * next) : (next === 0 ? NaN : Math.trunc(a / next));
+        const res = t === '*' ? a * next : next === 0 ? NaN : Math.trunc(a / next);
         if (!Number.isFinite(res)) return null;
         stack.push(String(res));
         i += 2;
@@ -108,34 +93,36 @@ const NumberInput = forwardRef(function NumberInput(
     return String(clamped);
   };
 
-  // Regex helpers seguros (÷ como \u00F7, guion al final/escapado)
-  const allowedPattern = /^[0-9xX+*/\u00F7\s-]*$/;
-  const singleCharAllowed = /^[0-9xX+*/\u00F7\s-]$/;
+  // ✅ Regex helpers (permitimos ÷ en JS, pero NO en el pattern HTML)
+  const allowedPatternJS = /^[0-9xX+*/÷\s-]*$/;
+  const singleCharAllowedJS = /^[0-9xX+*/÷\s-]$/;
 
-  // Tecleo: dígitos + operadores + espacios
+  // ✅ Pattern HTML SEGURO (sin '÷'; guion escapado)
+  const SAFE_HTML_PATTERN = '^[0-9xX+*/\\s\\-]*$';
+
+  // Tecleo
   const handleInputChange = (e) => {
     const text = e.target.value;
-    if (allowedPattern.test(text)) {
+    if (allowedPatternJS.test(text)) {
       setDraft(text);
     }
   };
 
   const handlePaste = (e) => {
     const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
-    const cleaned = text.replace(/[^0-9xX+*/\u00F7\s-]/g, '');
+    const cleaned = text.replace(/[^0-9xX+*/÷\s-]/g, '');
     e.preventDefault();
     setDraft((prev) => (prev || '') + cleaned);
   };
 
   const handleBeforeInput = (e) => {
     if (e.data == null) return;
-    if (!singleCharAllowed.test(e.data)) e.preventDefault();
+    if (!singleCharAllowedJS.test(e.data)) e.preventDefault();
   };
 
   const commit = () => {
     const res = evalExpr(draft);
     if (res == null) {
-      // Si la expresión es inválida, volvemos al value actual
       setDraft(value ?? '');
       return;
     }
@@ -167,7 +154,9 @@ const NumberInput = forwardRef(function NumberInput(
     }
   };
 
-  const handleBlur = () => { commit(); };
+  const handleBlur = () => {
+    commit();
+  };
 
   return (
     <div className="custom-number-input">
@@ -182,13 +171,9 @@ const NumberInput = forwardRef(function NumberInput(
         onBlur={handleBlur}
         onBeforeInput={handleBeforeInput}
         onPaste={handlePaste}
-
-        // Móvil: 'text' para poder tipear '+'. Desktop: 'decimal'
         inputMode={rest.inputMode ?? defaultInputMode}
-
-        // ✅ pattern seguro por defecto (÷ como \u00F7 y guion escapado)
-        pattern={rest.pattern ?? '^[0-9xX+*/\\u00F7\\s\\-]*$'}
-
+        // ⛑️ Pattern HTML seguro (sin ÷)
+        pattern={rest.pattern ?? SAFE_HTML_PATTERN}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
