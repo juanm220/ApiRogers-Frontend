@@ -25,6 +25,9 @@ function LocationPage() {
   const [newFridgeName, setNewFridgeName] = useState('');
   const [standardOrder, setStandardOrder] = useState([]);
 
+  // Última edición (quién y cuándo)
+  const [lastEdit, setLastEdit] = useState(null); // { at: ISO, actorName: string|null }
+
   // Ediciones locales (string) => { [fridgeId]: { [productName]: "12" } }
   const [fridgeEdits, setFridgeEdits] = useState({});
 
@@ -144,6 +147,26 @@ function LocationPage() {
     })();
     return () => controller.abort();
   }, [locationId, token]);
+  // Cargar "último editor" (si el backend lo expone)
+  useEffect(() => {
+    if (!locationId) return;
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const r = await API.get(`/locations/${locationId}/last-edit`, { signal: ac.signal, timeout: 10000 });
+        const data = r.data?.data;
+        if (data?.at) {
+          setLastEdit({ at: data.at, actorName: data.actorName || null, source: data.source || null });
+        } else {
+          setLastEdit(null);
+        }
+      } catch {
+        // silencioso: si no existe el endpoint o falla, no mostramos nada
+        setLastEdit(null);
+      }
+    })();
+    return () => ac.abort();
+  }, [locationId]);
 
   useEffect(() => {
     (async () => {
@@ -554,6 +577,13 @@ function LocationPage() {
       </div>
 
       <h2>Location: {locationData.name}</h2>
+      {lastEdit && (
+      <div className="pill" title={lastEdit.source ? `Fuente: ${lastEdit.source}` : undefined} style={{ margin: '6px 0 12px' }}>
+        Última edición: <b>{lastEdit.actorName || '—'}</b>
+        <span style={{ opacity: .8 }}> · {new Date(lastEdit.at).toLocaleString()}</span>
+      </div>
+      )}
+
 
       {/* Inventario (sesión) */}
       <div className="card" style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
