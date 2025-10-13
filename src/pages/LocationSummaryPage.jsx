@@ -1,3 +1,4 @@
+// src/pages/LocationSummaryPage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import API from '../apiService';
 import NavBar from '../components/NavBar';
@@ -28,7 +29,7 @@ function LocationSummaryPage() {
   const [denseRows, setDenseRows] = useState(false);
 
   // Resumen inventario por locación
-  // { [locId]: { initial: { [prod]: num }, final: { [prod]: num|undefined }, transfer: { [prod]: +n|-n } } }
+  // { [locId]: { initial:{[prod]:num}, final:{[prod]:num}, transfer:{[prod]:+n|-n}, closed:boolean } }
   const [invSummaries, setInvSummaries] = useState({});
 
   const orderMap = useMemo(() => {
@@ -59,25 +60,29 @@ function LocationSummaryPage() {
         setSummaries(data.summaries || {});
         setLoading(false);
 
-        // 🔁 Una vez que tengo locaciones, busco sesiones activas y summaries
-        // Esto funciona con TU backend actual:
-        // GET /inventory-sessions/active?locationId=...
-        // GET /inventory-sessions/:sessionId/summary
+        // 🔁 Una vez que tengo locaciones, busco sesiones activas y su summary
+        // CORREGIDO: endpoints montados bajo /locations
+        // GET  /locations/inventory-sessions/active?locationId=...
+        // GET  /locations/inventory-sessions/:sessionId/summary
         const invMap = {};
         await Promise.all(
           (locs || []).map(async (loc) => {
             try {
-              const activeRes = await API.get('/inventory-sessions/active', {
+              const activeRes = await API.get('/locations/inventory-sessions/active', {
                 params: { locationId: loc._id },
                 timeout: 12000,
               });
               const sess = activeRes.data?.session;
               if (!sess?._id) return;
 
-              const sumRes = await API.get(`/inventory-sessions/${sess._id}/summary`, { timeout: 15000 });
-              const rows = sumRes.data?.data?.rows || [];
-              // rows: [{ productName, inicial, entradas, salidas, final|null, diferencia|null }]
+              const sumRes = await API.get(`/locations/inventory-sessions/${sess._id}/summary`, {
+                timeout: 15000,
+              });
 
+              const rows = sumRes.data?.data?.rows || [];
+              const closed = !!sumRes.data?.data?.closedAt;
+
+              // rows: [{ productName, inicial, entradas, salidas, final|null, diferencia|null }]
               const initial = {};
               const final = {};
               const transfer = {};
@@ -92,7 +97,7 @@ function LocationSummaryPage() {
                 const net = (Number(row.entradas) || 0) - (Number(row.salidas) || 0);
                 if (net) transfer[name] = net;
               }
-              invMap[loc._id] = { initial, final, transfer };
+              invMap[loc._id] = { initial, final, transfer, closed };
             } catch (e) {
               // si algo falla para una locación, seguimos con las demás
             }
@@ -231,18 +236,27 @@ function LocationSummaryPage() {
           const breakdown = s.locationBreakdown || {};
           const keys = Object.keys(breakdown);
 
+          const inv = invSummaries[loc._id] || {};
+          const sessionClosed = !!inv.closed;
+          const showSalesCol = sessionClosed; // Ventas (sesión) solo si la sesión está cerrada
+
           let rows = keys.map((prod) => {
             const current = Number(breakdown[prod] || 0);
             const cap = effectiveCapacityFor(loc, prod);
             const ratio = cap > 0 ? current / cap : NaN;
 
             // Lectura de inicial / final / transfer (si existe sesión activa)
-            const inv = invSummaries[loc._id] || {};
             const initial = Number(inv.initial?.[prod]);
             const final = Number(inv.final?.[prod]);
             const transferNet = Number(inv.transfer?.[prod]); // puede ser + o -
 
-            return { prod, current, cap, ratio, initial, final, transferNet };
+            // Ventas (sesión) = Inicial − Final (solo si hay final)
+            const sales =
+              Number.isFinite(initial) && Number.isFinite(final)
+                ? Math.max(0, initial - final)
+                : null;
+
+            return { prod, current, cap, ratio, initial, final, transferNet, sales };
           });
 
           rows.sort((a, b) => {
@@ -263,6 +277,9 @@ function LocationSummaryPage() {
                   <span className="pill">Total productos: <b>{s.totalLocation || 0}</b></span>
                   <span className="pill">Usuarios: <b>{loc.usersCount || 0}</b></span>
                   <span className="pill">Neveras: <b>{(loc.refrigerators || []).length || 0}</b></span>
+                  {!sessionClosed && (
+                    <span className="pill" title="La sesión sigue abierta">Sesión abierta</span>
+                  )}
                 </div>
               </header>
 
@@ -272,13 +289,22 @@ function LocationSummaryPage() {
                 <div className="table-wrap table-wrap--shadow">
                   <table
                     className={`table-excel ${denseRows ? 'table--dense' : ''}`}
-                    style={{ minWidth: 860 }}
+                    style={{ minWidth: showSalesCol ? 980 : 860 }}
                   >
                     <thead>
                       <tr>
                         <th style={{ width: '34%' }}>Producto</th>
                         <th className="num" style={{ width: 110 }}>Inicial</th>
                         <th className="num" style={{ width: 110 }}>Final</th>
+                        {showSalesCol && (
+                          <th
+                            className="num"
+                            style={{ width: 130 }}
+                            title="Ventas = Inicial − Final (solo sesión cerrada)"
+                          >
+                            Ventas (sesión)
+                          </th>
+                        )}
                         <th className="num" style={{ width: 110 }}>Actual</th>
                         <th className="num" style={{ width: 180 }}>Capacidad efectiva</th>
                         <th className="num" style={{ width: 120 }}>Ocupación</th>
@@ -291,6 +317,7 @@ function LocationSummaryPage() {
                         const hasInitial = Number.isFinite(r.initial);
                         const hasFinal = Number.isFinite(r.final);
                         const hasTransfer = Number.isFinite(r.transferNet) && r.transferNet !== 0;
+                        const hasSales = Number.isFinite(r.sales);
 
                         return (
                           <tr key={`${loc._id}-${r.prod}`}>
@@ -311,6 +338,13 @@ function LocationSummaryPage() {
 
                             {/* Final */}
                             <td className="num">{hasFinal ? r.final : '—'}</td>
+
+                            {/* Ventas = Inicial − Final (solo si la sesión está cerrada) */}
+                            {showSalesCol && (
+                              <td className="num" title="Ventas de la sesión (Inicial − Final)">
+                                {hasSales ? r.sales : '—'}
+                              </td>
+                            )}
 
                             {/* Métricas actuales */}
                             <td className="num">{r.current}</td>
@@ -340,7 +374,7 @@ function LocationSummaryPage() {
             margin-left: 6px;
             white-space: nowrap;
           }
-          .small-delta.negative::before { content: '−'; }
+          .small-delta.negative::before { content: '-'; }
           .small-delta.positive::before { content: '+'; }
         `}
       </style>

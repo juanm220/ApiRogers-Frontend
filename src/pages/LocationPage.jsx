@@ -95,9 +95,9 @@ function LocationPage() {
   const hasAnySaving =
     savingFridgeId != null ||
     Object.values(rowSaving).some((m) => Object.values(m || {}).some(Boolean)) ||
-    Object.values(debouncers.current).some(Boolean);
-    Object.values(inFlight.current).some(Boolean) ||  
-    Object.values(pending.current).some(Boolean);  
+    Object.values(debouncers.current).some(Boolean) ||
+    Object.values(inFlight.current).some(Boolean) ||
+    Object.values(pending.current).some(Boolean);
 
   useEffect(() => {
     const beforeUnload = (e) => {
@@ -205,7 +205,8 @@ function LocationPage() {
       setToast({ type: 'ok', text: 'Sesión de inventario inicial iniciada.' });
     } catch (e) {
       console.error(e);
-      setToast({ type: 'error', text: 'No se pudo iniciar la sesión.' });
+      const msg = e?.response?.data?.message || 'No se pudo iniciar la sesión.';
+      setToast({ type: 'error', text: msg });
     } finally {
       setInvBusy(false);
     }
@@ -225,7 +226,8 @@ function LocationPage() {
       setToast({ type: 'ok', text: 'Inventario final registrado y sesión cerrada.' });
     } catch (e) {
       console.error(e);
-      setToast({ type: 'error', text: 'No se pudo cerrar la sesión.' });
+      const msg = e?.response?.data?.message || 'No se pudo cerrar la sesión.';
+      setToast({ type: 'error', text: msg });
     } finally {
       setInvBusy(false);
     }
@@ -333,7 +335,6 @@ function LocationPage() {
       }
     }, delay);
   };
-
 
   const handleQuantityChange = (fridgeId, productName, newVal) => {
     setFridgeEdits((prev) => ({
@@ -484,15 +485,15 @@ function LocationPage() {
       debouncers.current[fridge._id] = null;
     }
 
-    // ✅ espera si hay un autosave en vuelo para esta nevera
+    // espera si hay un autosave en vuelo para esta nevera
     while (inFlight.current[fridge._id]) {
-      // pequeño sleep
       // eslint-disable-next-line no-await-in-loop
       await new Promise(r => setTimeout(r, 150));
     }
 
-  await doSaveFridge(fridge._id, { silentOverlay: false });
+    await doSaveFridge(fridge._id, { silentOverlay: false });
   };
+
   // toggle autosave persistido
   const toggleAutosave = () => {
     setAutoSave((v) => {
@@ -502,8 +503,8 @@ function LocationPage() {
     });
   };
 
-  // Limpieza total en unmount: timers
-   useEffect(() => {
+  // Limpieza total en unmount: timers y flags
+  useEffect(() => {
     return () => {
       Object.values(debouncers.current).forEach((t) => t && clearTimeout(t));
       debouncers.current = {};
@@ -707,7 +708,8 @@ function LocationPage() {
                                     if (nextEl?.focus) nextEl.focus();
                                   }}
                                   aria-label={`Cantidad de ${prod.productName}`}
-                                  pattern="^[0-9xX+*/÷\\s-]*$"
+                                  // ✅ pattern seguro: ÷ como \u00F7 y guion escapado
+                                  pattern="^[0-9xX+*/\\u00F7\\s\\-]*$"
                                   inputMode={isMobile ? 'text' : 'decimal'}
                                   autoComplete="off"
                                   autoCorrect="off"

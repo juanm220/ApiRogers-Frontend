@@ -1,3 +1,4 @@
+// src/components/NumberInput.jsx
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import '../styles.css';
 
@@ -10,9 +11,9 @@ import '../styles.css';
  * - min/max: clamp del resultado
  *
  * Cambios clave:
- * - pattern seguro (guion al final) para evitar "Range out of order"
+ * - pattern seguro (÷ como \\u00F7 y guion escapado) para evitar errores con el flag /v
  * - no sobrescribe el draft mientras el input tiene foco
- * - validadores internos usan regex sin guion en medio del class
+ * - validadores internos usan regex con \u00F7 (÷)
  */
 const NumberInput = forwardRef(function NumberInput(
   {
@@ -40,13 +41,11 @@ const NumberInput = forwardRef(function NumberInput(
     node: inputRef.current,
   }));
 
-  // ⛑️ IMPORTANTE: no sobrescribir mientras el input tiene foco
+  // ⛑️ No sobrescribir mientras el input tiene foco
   useEffect(() => {
     const el = inputRef.current;
     const hasFocus = el && document.activeElement === el;
-    if (!hasFocus) {
-      setDraft(value ?? '');
-    }
+    if (!hasFocus) setDraft(value ?? '');
   }, [value]);
 
   // Eval con prioridad (* / antes que + -), admite x, ×, ÷
@@ -54,7 +53,7 @@ const NumberInput = forwardRef(function NumberInput(
     const normalized = String(str || '')
       .replace(/\s+/g, '')
       .replace(/[xX×]/g, '*')
-      .replace(/÷/g, '/');
+      .replace(/\u00F7/g, '/'); // ÷
 
     if (normalized === '') return '';
 
@@ -85,9 +84,7 @@ const NumberInput = forwardRef(function NumberInput(
         const next = parseInt(fixed[i + 1], 10);
         if (prev == null || Number.isNaN(next)) return null;
         const a = parseInt(prev, 10);
-        const res = t === '*'
-          ? (a * next)
-          : (next === 0 ? NaN : Math.trunc(a / next));
+        const res = t === '*' ? (a * next) : (next === 0 ? NaN : Math.trunc(a / next));
         if (!Number.isFinite(res)) return null;
         stack.push(String(res));
         i += 2;
@@ -111,9 +108,9 @@ const NumberInput = forwardRef(function NumberInput(
     return String(clamped);
   };
 
-  // Regex helpers sin rangos ambiguos (guion al final)
-  const allowedPattern = /^[0-9xX+*/÷\s-]*$/;
-  const singleCharAllowed = /^[0-9xX+*/÷\s-]$/;
+  // Regex helpers seguros (÷ como \u00F7, guion al final/escapado)
+  const allowedPattern = /^[0-9xX+*/\u00F7\s-]*$/;
+  const singleCharAllowed = /^[0-9xX+*/\u00F7\s-]$/;
 
   // Tecleo: dígitos + operadores + espacios
   const handleInputChange = (e) => {
@@ -125,7 +122,7 @@ const NumberInput = forwardRef(function NumberInput(
 
   const handlePaste = (e) => {
     const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
-    const cleaned = text.replace(/[^0-9xX+*/÷\s-]/g, '');
+    const cleaned = text.replace(/[^0-9xX+*/\u00F7\s-]/g, '');
     e.preventDefault();
     setDraft((prev) => (prev || '') + cleaned);
   };
@@ -189,8 +186,8 @@ const NumberInput = forwardRef(function NumberInput(
         // Móvil: 'text' para poder tipear '+'. Desktop: 'decimal'
         inputMode={rest.inputMode ?? defaultInputMode}
 
-        // ✅ pattern seguro por defecto; el padre puede sobreescribirlo
-        pattern={rest.pattern ?? '^[0-9xX+*/÷\\s-]*$'}
+        // ✅ pattern seguro por defecto (÷ como \u00F7 y guion escapado)
+        pattern={rest.pattern ?? '^[0-9xX+*/\\u00F7\\s\\-]*$'}
 
         autoComplete="off"
         autoCorrect="off"
