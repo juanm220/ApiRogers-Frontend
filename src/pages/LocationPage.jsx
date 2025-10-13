@@ -8,6 +8,14 @@ import NumberInput from '../components/NumberInput';
 import '../styles.css';
 import Footer from '../components/Footer';
 
+
+// Usa la baseURL del axios instance si existe; si no, asume relativo "/api"
+const getApiBase = () => {
+  const base = (API?.defaults?.baseURL || '/api').replace(/\/+$/, '');
+  return base;
+};
+
+
 function LocationPage() {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -148,25 +156,52 @@ function LocationPage() {
     return () => controller.abort();
   }, [locationId, token]);
 
-  // Cargar "último editor" (opcional; si no existe la ruta, no muestra nada)
-  useEffect(() => {
-    if (!locationId) return;
-    const ac = new AbortController();
-    (async () => {
-      try {
-        const r = await API.get(`/locations/${locationId}/last-edit`, { signal: ac.signal, timeout: 10000 });
-        const data = r.data?.data;
-        if (data?.at) {
-          setLastEdit({ at: data.at, actorName: data.actorName || null, source: data.source || null });
-        } else {
-          setLastEdit(null);
-        }
-      } catch {
+
+  // Cargar "último editor" sin contaminar la consola si la ruta no existe
+useEffect(() => {
+  if (!locationId) return;
+  // Si ya detectamos que la ruta no existe, no vuelvas a consultar
+  if (localStorage.getItem('disable_last_edit') === '1') return;
+
+  const ac = new AbortController();
+  (async () => {
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/locations/${locationId}/last-edit`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal: ac.signal,
+      });
+
+      if (!res.ok) {
+        // Si es 404, cacheamos que no está disponible para evitar más llamadas
+        if (res.status === 404) localStorage.setItem('disable_last_edit', '1');
+        setLastEdit(null);
+        return;
+      }
+
+      const json = await res.json();
+      const data = json?.data;
+      if (data?.at) {
+        setLastEdit({
+          at: data.at,
+          actorName: data.actorName || null,
+          source: data.source || null,
+        });
+      } else {
         setLastEdit(null);
       }
-    })();
-    return () => ac.abort();
-  }, [locationId]);
+    } catch {
+      // Silencioso: si falla (CORS, red, etc.) no mostramos nada
+      setLastEdit(null);
+    }
+  })();
+
+  return () => ac.abort();
+}, [locationId, token]);
 
   useEffect(() => {
     (async () => {
@@ -232,29 +267,33 @@ function LocationPage() {
       setToast({ type: 'error', text: msg });
     } finally {
       setInvBusy(false);
-    }
+    } 
   }
 
-  async function handleCloseWithFinal() {
-    if (invBusy || !invActive?._id) return;
-    if (hasUnsaved) {
-      const ok = window.confirm('Tienes cambios sin guardar. ¿Cerrar sesión e incluir lo que ves ahora como inventario final?');
-      if (!ok) return;
-    }
-    setInvBusy(true);
-    try {
-      const finalSnapshot = buildFinalSnapshotFromUI();
-      await API.patch(`/locations/inventory-sessions/${invActive._id}/final`, { finalSnapshot }, { timeout: 20000 });
-      await fetchActiveInv();
-      setToast({ type: 'ok', text: 'Inventario final registrado y sesión cerrada.' });
-    } catch (e) {
-      console.error(e);
-      const msg = e?.response?.data?.message || 'No se pudo cerrar la sesión.';
-      setToast({ type: 'error', text: msg });
-    } finally {
-      setInvBusy(false);
-    }
+ async function handleCloseWithFinal() {
+  if (invBusy || !invActive?._id) return;
+  if (hasUnsaved) {
+    const ok = window.confirm('Tienes cambios sin guardar. ¿Cerrar sesión e incluir lo que ves ahora como inventario final?');
+    if (!ok) return;
   }
+  setInvBusy(true);
+  try {
+    const finalSnapshot = buildFinalSnapshotFromUI();
+    await API.patch(`/locations/inventory-sessions/${invActive._id}/final`, { finalSnapshot }, { timeout: 20000 });
+    await fetchActiveInv();
+    // 🔄 Refetch de la locación para que los números queden actualizados
+    const refetch = await API.get(`/locations/${locationId}`, { timeout: 15000 });
+    setLocationData(refetch.data);
+    setToast({ type: 'ok', text: 'Inventario final registrado y sesión cerrada.' });
+  } catch (e) {
+    console.error(e);
+    const msg = e?.response?.data?.message || 'No se pudo cerrar la sesión.';
+    setToast({ type: 'error', text: msg });
+  } finally {
+    setInvBusy(false);
+  }
+}
+
 
   // ---- acciones admin ----
   const handleRenameLocation = async () => {
