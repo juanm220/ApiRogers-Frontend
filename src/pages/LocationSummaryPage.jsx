@@ -8,7 +8,7 @@ import {
   forgetClosedSession,
   getLastClosedSessionId,
   rememberClosedSession,
-} from '../components/inventorySessionStorage';
+} from '../utils/inventorySessionStorage';
 
 const toKey = (s) => String(s || '').trim().toLowerCase();
 
