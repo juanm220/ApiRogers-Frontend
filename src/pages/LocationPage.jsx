@@ -7,6 +7,7 @@ import NavBar from '../components/NavBar';
 import NumberInput from '../components/NumberInput';
 import '../styles.css';
 import Footer from '../components/Footer';
+import { rememberClosedSession } from '../utils/inventorySessionStorage';
 
 function LocationPage() {
   const { locationId } = useParams();
@@ -241,7 +242,15 @@ function LocationPage() {
     setInvBusy(true);
     try {
       const finalSnapshot = buildFinalSnapshotFromUI();
-      await API.patch(`/locations/inventory-sessions/${invActive._id}/final`, { finalSnapshot }, { timeout: 20000 });
+        const res = await API.patch(
+        `/locations/inventory-sessions/${invActive._id}/final`,
+        { finalSnapshot },
+        { timeout: 20000 },
+      );
+      const closedSessionId = res?.data?.session?._id;
+      if (closedSessionId) {
+        rememberClosedSession(locationId, closedSessionId);
+      }
       await fetchActiveInv();
       setToast({ type: 'ok', text: 'Inventario final registrado y sesión cerrada.' });
     } catch (e) {

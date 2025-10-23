@@ -4,6 +4,11 @@ import API from '../apiService';
 import NavBar from '../components/NavBar';
 import Footer from '../components/Footer';
 import '../styles.css';
+import {
+  forgetClosedSession,
+  getLastClosedSessionId,
+  rememberClosedSession,
+} from '../components/inventorySessionStorage';
 
 const toKey = (s) => String(s || '').trim().toLowerCase();
 
@@ -28,6 +33,7 @@ function LocationSummaryPage() {
   const [hideEmptyAfterFilter, setHideEmptyAfterFilter] = useState(true);
   const [denseRows, setDenseRows] = useState(false);
 
+  // Resumen inventario por locación:
   // { [locId]: { initial:{[prod]:num}, final:{[prod]:num}, transfer:{[prod]:+n|-n}, closed:boolean } }
   const [invSummaries, setInvSummaries] = useState({});
 
@@ -42,15 +48,16 @@ function LocationSummaryPage() {
     return typeof i === 'number' ? i : 9999;
   };
 
-  // Carga principal
+  // ----- Carga principal -----
   useEffect(() => {
     const controller = new AbortController();
-    (async () => {
-        setLoading(true);
-        setErrMsg('');
-        try {
-        // Dashboard overview
-        const r = await API.get('/dashboard/overview', { signal: controller.signal });
+
+    const load = async () => {
+      setLoading(true);
+      setErrMsg('');
+      try {
+        // 1) Dashboard overview (capacidad, orden estándar, locaciones, resumen actual)
+        const r = await API.get('/dashboard/overview', { signal: controller.signal, timeout: 20000 });
         const data = r.data?.data || {};
         setStdOrder(Array.isArray(data.stdOrder) ? data.stdOrder : []);
         setCapacityMap(data.capacityMap || {});
@@ -60,78 +67,69 @@ function LocationSummaryPage() {
         setSummaries(data.summaries || {});
         setLoading(false);
 
-        // 🔁 Sesiones activas y summary (ENDPOINTS CORRECTOS BAJO /locations)
-        // GET  /locations/inventory-sessions/active?locationId=...
-        // GET  /locations/inventory-sessions/:sessionId/summary
+        // 2) Para cada locación, intentar sesión activa; si no hay, intentar última cerrada (desde storage)
         const invMap = {};
-        
-        const resolveSession = async (locId) => {
-          if (!locId) return null;
-
-          try {
-            const activeRes = await API.get('/locations/inventory-sessions/active', {
-              params: { locationId: locId },
-              timeout: 12000,
-              signal: controller.signal,
-            });
-            const sess = activeRes.data?.session;
-            if (sess?._id) {
-              return { session: sess, closed: sess.status === 'closed' };
-            }
-          } catch (errActive) {
-            if (errActive?.name !== 'CanceledError') {
-              console.warn('Active session fetch error for loc', locId, errActive?.response?.status || errActive);
-            }
-          }
-
-          try {
-            const historyRes = await API.get('/locations/inventory-sessions/history', {
-              params: {
-                locationId: locId,
-                status: 'closed',
-                limit: 1,
-                sort: '-closedAt',
-              },
-              timeout: 12000,
-              signal: controller.signal,
-            });
-
-            const list = historyRes.data?.sessions
-              || historyRes.data?.data?.sessions
-              || historyRes.data?.data
-              || [];
-            const arr = Array.isArray(list) ? list : [list];
-            const candidate = arr.find((s) => s && s.status === 'closed');
-            if (candidate?._id) {
-              return { session: candidate, closed: true };
-            }
-          } catch (errHistory) {
-            if (errHistory?.name !== 'CanceledError') {
-              console.warn('Inventory session history fetch error for loc', locId, errHistory?.response?.status || errHistory);
-            }
-          }
-
-          return null;
-        };
 
         await Promise.all(
           (locs || []).map(async (loc) => {
-            const locId = loc._id;
+            const locId = loc?._id;
             if (!locId) return;
+
+            let sessionId = null;
+            let consideredClosed = false;
+
+            // 2.a) Intentar sesión activa
             try {
-              const sessionInfo = await resolveSession(locId);
-              const sess = sessionInfo?.session;
-              if (!sess?._id) return;
-
-              const sumRes = await API.get(`/locations/inventory-sessions/${sess._id}/summary`, {
-                timeout: 15000,
+              const activeRes = await API.get('/locations/inventory-sessions/active', {
+                params: { locationId: locId },
                 signal: controller.signal,
+                timeout: 12000,
               });
+              const activeSess = activeRes.data?.session;
+              if (activeSess?._id) {
+                sessionId = activeSess._id;
+                // En la mayoría de backends "active" implica abierta;
+                // si por diseño viniera cerrada, esto la marca:
+                consideredClosed = activeSess.status === 'closed';
+              }
+            } catch (errActive) {
+              if (errActive?.name !== 'CanceledError') {
+                // 404 o no hay sesión activa: no es error crítico
+                // console.warn('Active session fetch error for loc', locId, errActive?.response?.status || errActive);
+              }
+            }
 
+            // 2.b) Si NO hay activa, intentar la última cerrada conocida en storage
+            if (!sessionId) {
+              const storedId = getLastClosedSessionId(locId);
+              if (storedId) {
+                sessionId = storedId;
+                consideredClosed = true; // lo tratamos como cerrada
+              }
+            }
+
+            if (!sessionId) {
+              // No hay nada que mostrar para esta locación
+              return;
+            }
+
+            // 2.c) Traer el summary de esa sesión
+            try {
+              const sumRes = await API.get(`/locations/inventory-sessions/${sessionId}/summary`, {
+                signal: controller.signal,
+                timeout: 15000,
+              });
 
               const rows = sumRes.data?.data?.rows || [];
               const closedAt = sumRes.data?.data?.closedAt;
-              const closed = sessionInfo?.closed || !!closedAt;
+              const closed = consideredClosed || !!closedAt;
+
+              // Si está cerrada, persistimos el sessionId; si no, lo olvidamos
+              if (closed) {
+                rememberClosedSession(locId, sessionId);
+              } else {
+                forgetClosedSession(locId);
+              }
 
               const initial = {};
               const final = {};
@@ -140,32 +138,39 @@ function LocationSummaryPage() {
                 const name = row.productName;
                 initial[name] = Number(row.inicial) || 0;
                 if (row.final == null || Number.isNaN(Number(row.final))) {
-                  // sesión abierta: sin final
+                  // sesión abierta -> sin final
                 } else {
                   final[name] = Number(row.final) || 0;
                 }
                 const net = (Number(row.entradas) || 0) - (Number(row.salidas) || 0);
                 if (net) transfer[name] = net;
               }
+
               invMap[locId] = { initial, final, transfer, closed };
-            } catch (e) {
-              // sigue con las demás locaciones
-              console.warn('Inv summary fetch error for loc', locId, e?.response?.status || e);
+            } catch (sumErr) {
+              // Si falló el summary para una sesión almacenada, la olvidamos
+              forgetClosedSession(locId);
+              if (sumErr?.name !== 'CanceledError') {
+                // console.warn('Inv summary fetch error for loc', locId, sumErr?.response?.status || sumErr);
+              }
             }
-            })
+          })
         );
+
         setInvSummaries(invMap);
-        } catch (e) {
+      } catch (e) {
         if (e?.name !== 'CanceledError') {
           console.error('Summary load error:', e);
           setErrMsg('Error cargando el resumen');
-          setLoading(false);
         }
-        }
-    })();
-    return () => controller.abort();
-    }, []);
+      } finally {
+        setLoading(false);
+      }
+    };
 
+    load();
+    return () => controller.abort();
+  }, []);
 
   const colorForRatio = (ratio) => {
     if (!colorByCapacity || !Number.isFinite(ratio)) return 'inherit';
@@ -206,13 +211,13 @@ function LocationSummaryPage() {
   return (
     <div className="main-container">
       <NavBar />
-      <h2 style={{ marginTop: '0.5rem' }}>Summary per Location</h2>
+      <h2 style={{ marginTop: '0.5rem' }}>Resumen por Locación</h2>
 
       {/* Controles */}
       <div className="card" style={{ marginBottom: '1rem', display: 'grid', gap: 12 }}>
         <div className="grid-2">
           <div>
-            <label>search by location</label>
+            <label>Buscar locación</label>
             <input
               type="text"
               placeholder="Ej: Sede Norte"
@@ -221,7 +226,7 @@ function LocationSummaryPage() {
             />
           </div>
           <div className="flex-row" style={{ alignItems: 'center', gap: 10 }}>
-            <label>Hide locations without results</label>
+            <label>Ocultar locaciones sin resultados</label>
             <input
               type="checkbox"
               checked={hideEmptyAfterFilter}
@@ -234,7 +239,7 @@ function LocationSummaryPage() {
                 checked={denseRows}
                 onChange={(e) => setDenseRows(e.target.checked)}
               />
-             Compact rows
+              Filas compactas
             </label>
           </div>
         </div>
@@ -247,7 +252,7 @@ function LocationSummaryPage() {
             aria-pressed={prodFilter === 'all'}
             title="Ver todos los productos"
           >
-            All
+            Todos
           </button>
           <button
             type="button"
@@ -256,7 +261,7 @@ function LocationSummaryPage() {
             aria-pressed={prodFilter === 'critical'}
             title={`≤ ${Math.round(lowThreshold * 100)}%`}
           >
-            Critics
+            Críticos
           </button>
           <button
             type="button"
@@ -265,7 +270,7 @@ function LocationSummaryPage() {
             aria-pressed={prodFilter === 'warn'}
             title={`≤ ${Math.round(warnThreshold * 100)}%`}
           >
-            Warnings
+            Advertencia
           </button>
           <button
             type="button"
@@ -279,7 +284,7 @@ function LocationSummaryPage() {
         </div>
       </div>
 
-      {loading && <p>Loading...</p>}
+      {loading && <p>Cargando…</p>}
       {errMsg && <p style={{ color: 'crimson' }}>{errMsg}</p>}
 
       <div className="loc-grid" style={{ gap: 'clamp(12px, 2.5vmin, 20px)' }}>
@@ -290,7 +295,7 @@ function LocationSummaryPage() {
 
           const inv = invSummaries[loc._id] || {};
           const sessionClosed = !!inv.closed;
-          const showSalesCol = sessionClosed; // Ventas solo si la sesión está cerrada
+          const showSalesCol = sessionClosed; // Ventas (sesión) solo si la sesión está cerrada
 
           let rows = keys.map((prod) => {
             const current = Number(breakdown[prod] || 0);
@@ -326,17 +331,17 @@ function LocationSummaryPage() {
               <header className="loc-head">
                 <h3 className="m0">{loc.name}</h3>
                 <div className="loc-meta">
-                  <span className="pill">Total products: <b>{s.totalLocation || 0}</b></span>
-                  <span className="pill">Users: <b>{loc.usersCount || 0}</b></span>
-                  <span className="pill">Fridges: <b>{(loc.refrigerators || []).length || 0}</b></span>
+                  <span className="pill">Total productos: <b>{s.totalLocation || 0}</b></span>
+                  <span className="pill">Usuarios: <b>{loc.usersCount || 0}</b></span>
+                  <span className="pill">Neveras: <b>{(loc.refrigerators || []).length || 0}</b></span>
                   {!sessionClosed && (
-                    <span className="pill" title="La sesión sigue abierta">Open session</span>
+                    <span className="pill" title="La sesión sigue abierta">Sesión abierta</span>
                   )}
                 </div>
               </header>
 
-              {(rows.length === 0) ? (
-                <em>There are not products that match the filters</em>
+              {rows.length === 0 ? (
+                <em>No hay productos que coincidan con el filtro.</em>
               ) : (
                 <div className="table-wrap table-wrap--shadow">
                   <table
@@ -345,8 +350,8 @@ function LocationSummaryPage() {
                   >
                     <thead>
                       <tr>
-                        <th style={{ width: '34%' }}>Product</th>
-                        <th className="num" style={{ width: 110 }}>Innitial</th>
+                        <th style={{ width: '34%' }}>Producto</th>
+                        <th className="num" style={{ width: 110 }}>Inicial</th>
                         <th className="num" style={{ width: 110 }}>Final</th>
                         {showSalesCol && (
                           <th
@@ -357,10 +362,10 @@ function LocationSummaryPage() {
                             Ventas (sesión)
                           </th>
                         )}
-                        <th className="num" style={{ width: 110 }}>Current</th>
-                        <th className="num" style={{ width: 180 }}>Capacity </th>
-                        <th className="num" style={{ width: 120 }}>Percentage of occupation</th>
-                        <th className="num" style={{ width: 120 }}>Lacking to be full</th>
+                        <th className="num" style={{ width: 110 }}>Actual</th>
+                        <th className="num" style={{ width: 180 }}>Capacidad efectiva</th>
+                        <th className="num" style={{ width: 120 }}>Ocupación</th>
+                        <th className="num" style={{ width: 120 }}>Faltan</th>
                       </tr>
                     </thead>
                     <tbody>
