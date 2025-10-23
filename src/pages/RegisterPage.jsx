@@ -46,15 +46,15 @@ function RegisterPage() {
   return (
     <div className="auth-page">
       <div className="login-container" role="dialog" aria-labelledby="register-title" aria-describedby="register-desc">
-        <h2 id="register-title">Crear cuenta</h2>
-        <p id="register-desc">Completa los campos para registrar un usuario.</p>
+        <h2 id="register-title">Create account</h2>
+        <p id="register-desc">Please complete all fields to create an user</p>
 
         {err && <div className="error-message" role="alert">{err}</div>}
         {ok  && <div className="success-message" role="status">{ok}</div>}
 
         <form onSubmit={handleRegister} autoComplete="off">
           <div className="form-group">
-            <label htmlFor="name">Nombre</label>
+            <label htmlFor="name">Name</label>
             <input
               id="name"
               type="text"
@@ -66,7 +66,7 @@ function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="lastname">Apellido</label>
+            <label htmlFor="lastname">Lastname</label>
             <input
               id="lastname"
               type="text"
@@ -78,7 +78,7 @@ function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="email">Correo</label>
+            <label htmlFor="email">Mail</label>
             <input
               id="email"
               type="email"
@@ -90,7 +90,7 @@ function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">Contraseña</label>
+            <label htmlFor="password">Password</label>
             <input
               id="password"
               type="password"
@@ -107,7 +107,7 @@ function RegisterPage() {
         </form>
 
         <p style={{ marginTop: 12 }}>
-          ¿Ya tienes cuenta? <Link to="/login">Inicia sesión</Link>
+          Do you have an account? <Link to="/login"> Login </Link>
         </p>
       </div>
     </div>

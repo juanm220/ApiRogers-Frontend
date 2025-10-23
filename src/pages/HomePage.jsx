@@ -80,7 +80,7 @@ function HomePage() {
       {/* Admin can create new location */}
       {(role === 'admin' || role === 'superuser') && (
         <div style={{ marginTop: '1rem' }}>
-          <h4>Crear Nueva Locación</h4>
+          <h4>Create new location</h4>
           <input
             type="text"
             value={newLocName}
@@ -88,7 +88,7 @@ function HomePage() {
             placeholder="Nombre de la locación"
           />
           <button onClick={handleCreateLocation}>
-            Crear Locación
+            Create location
           </button>
         </div>
       )}

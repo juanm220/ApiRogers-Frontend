@@ -65,7 +65,7 @@ function NavBar() {
   return (
     <header className="navbar" role="banner">
       {/* Brand */}
-      <Link to="/dashboard" className="brand" aria-label="Ir al Dashboard">
+      <Link to="/summary" className="brand" aria-label="Ir al Dashboard summary">
         <span className="brand-mark" aria-hidden="true" />
         <h1 className="brand-title">Hawking Team</h1>
       </Link>
@@ -92,21 +92,21 @@ function NavBar() {
 
         {/* Resumen visible para todos los roles logueados */}
         <NavLink to="/summary" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-          Resumen
+          Summary Dashboard
         </NavLink>
 
         {isAdmin && (
           <>
             {/* Historial & Capacidad solo admin/superuser */}
             <NavLink to="/history-capacity" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              Historial & Capacidad
+              Historical & capacity
             </NavLink>
           </>
         )}
         {/* Transferencias */}
         {isAdmin && (
           <NavLink to="/transfers" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Transferencias
+            Transfers
           </NavLink>
         )}
         {/* Administrar usuarios // fridges */}
@@ -116,7 +116,7 @@ function NavBar() {
               Admin Users
             </NavLink>
             <NavLink to="/fridge-settings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              Ajustes Neveras
+              Settings fridges
             </NavLink>
           </>
         )}
@@ -157,11 +157,11 @@ function NavBar() {
           <NavLink to="/home" className="nav-link" onClick={() => setOpen(false)}>Home</NavLink>
 
           {/* Resumen visible para todos */}
-          <NavLink to="/summary" className="nav-link" onClick={() => setOpen(false)}>Resumen</NavLink>
+          <NavLink to="/summary" className="nav-link" onClick={() => setOpen(false)}>Summary</NavLink>
 
           {isAdmin && (
             <NavLink to="/history-capacity" className="nav-link" onClick={() => setOpen(false)}>
-              Historial & Capacidad
+              Hitorical and Capacity
             </NavLink>
           )}
 
@@ -170,26 +170,26 @@ function NavBar() {
           )}
           {isAdmin && (
             <NavLink to="/transfers" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              Transferencias
+              Transfers
             </NavLink>
           )}
           {isAdmin && (
             <>
               <NavLink to="/admin/users" className="nav-link" onClick={() => setOpen(false)}>Admin Users</NavLink>
-              <NavLink to="/fridge-settings" className="nav-link" onClick={() => setOpen(false)}>Ajustes Neveras</NavLink>
+              <NavLink to="/fridge-settings" className="nav-link" onClick={() => setOpen(false)}>Settings fridges</NavLink>
             </>
           )}
 
           {locations.length > 0 && (
             <div className="mobile-control">
-              <label className="mobile-label">Locación</label>
+              <label className="mobile-label">Location</label>
               <select
                 className="nav-select"
                 aria-label="Cambiar Locación"
                 value={selectedLoc}
                 onChange={handleLocationChange}
               >
-                <option value="">— Cambiar Locación —</option>
+                <option value="">— Change Location —</option>
                 {locations.map((loc) => (
                   <option key={loc._id} value={loc._id}>{loc.name}</option>
                 ))}

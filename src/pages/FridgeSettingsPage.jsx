@@ -217,7 +217,7 @@ function FridgeSettingsPage() {
     return (
       <div className="main-container">
         <NavBar />
-        <p>Cargando lista de productos...</p>
+        <p>Loading list of products...</p>
       </div>
     );
   }
@@ -226,31 +226,31 @@ function FridgeSettingsPage() {
     <div className="main-container">
       <NavBar />
       
-      <h2>Ajustes de Productos (Orden Universal)</h2>
+      <h2>Products´ settings (Orden Universal)</h2>
       <p style={{ marginTop: 0 }}>
-        Esta lista define <strong>qué productos</strong> y <strong>en qué orden</strong> aparecen en todas las neveras.
+        This list define <strong>which products</strong> y <strong>and the order</strong> in which it will appear in the fridges.
       </p>
 
       {!isAdmin && (
         <div className="card" style={{ marginBottom: '1rem' }}>
-          <strong>Solo lectura:</strong> Tu rol no permite modificar esta lista.
+          <strong>Just reading:</strong> Your role does not allow you to modify this list
         </div>
       )}
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Listado</h3>
+        <h3 style={{ marginTop: 0 }}>List</h3>
         {/* Indicador sutil */}
         <p style={{ marginTop: 0, fontSize: '0.9rem', opacity: 0.7 }}>
-          Los cambios se guardan y sincronizan automáticamente.
+          Changes will be saved and sync automatically
         </p>
-        {draftItems.length === 0 && <p>No hay productos en la lista.</p>}
+        {draftItems.length === 0 && <p>There are no products in this list.</p>}
 
         <table>
           <thead>
             <tr>
               <th style={{ width: '52px' }}>#</th>
-              <th>Producto</th>
-              <th style={{ width: '260px' }}>Acciones</th>
+              <th>Product</th>
+              <th style={{ width: '260px' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -299,7 +299,7 @@ function FridgeSettingsPage() {
                           onClick={() => removeItem(idx)}
                           style={{ marginLeft: '0.5rem' }}
                         >
-                          Eliminar
+                          Delete
                         </button>
                         <span style={{ marginLeft: '0.75rem', opacity: 0.7 }}>
                           
@@ -325,12 +325,12 @@ function FridgeSettingsPage() {
                 onChange={(e) => setNewItem(e.target.value)}
               />
               <button onClick={addItem} style={{ marginLeft: '0.5rem' }}>
-                Añadir
+                Add
               </button>
             </div>
             <div style={{ marginTop: '1rem' }}>
                 <button onClick={resetToServer} style={{ marginRight: '0.5rem' }}>
-                    Deshacer cambios
+                    Undo changes
                 </button>
             </div>
           </>
@@ -338,11 +338,11 @@ function FridgeSettingsPage() {
       </div>
 
       <div className="card">
-        <h4 style={{ marginTop: 0 }}>Cómo impacta</h4>
+        <h4 style={{ marginTop: 0 }}>How impacts</h4>
         <p>
-          — Al <strong>crear una nevera</strong>, se inicializa con esta lista (cantidades en 0).<br />
-          — Al <strong>editar cantidades</strong>, puedes ordenar la UI según este orden para mantener consistencia.<br />
-          — Si un admin <strong>cambia el orden/aumenta/disminuye</strong> aquí, el cambio será global.
+          — Al <strong>Crea a fridge</strong>, will innitialize with this list of products(cantidades en 0).<br />
+          — Al <strong>Edit quantities</strong>, You can order the UI according to this order to maintain consistensy.<br />
+          — If an Admin <strong>changes the order/increase/decrease</strong> here, the change will be global
         </p>
       </div>
       <Footer />

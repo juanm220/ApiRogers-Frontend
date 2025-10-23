@@ -30,10 +30,10 @@ export default function ResetPasswordPage() {
   return (
     <div className="auth-page">
       <div className="login-container">
-        <h2>Crear nueva contraseña</h2>
+        <h2>Create new password</h2>
         <form onSubmit={onSubmit}>
           <div className="form-group">
-            <label htmlFor="password">Nueva contraseña:</label>
+            <label htmlFor="password"> New password:</label>
             <input
               id="password"
               type="password"
@@ -45,7 +45,7 @@ export default function ResetPasswordPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="confirm">Confirmar contraseña:</label>
+            <label htmlFor="confirm">Confirm password</label>
             <input
               id="confirm"
               type="password"
@@ -56,11 +56,11 @@ export default function ResetPasswordPage() {
               required
             />
           </div>
-          <button type="submit" className="login-btn">Actualizar</button>
+          <button type="submit" className="login-btn">Update</button>
           {msg && <p className={msg.toLowerCase().includes('error') ? 'error-message' : 'success-message'} style={{ marginTop: 10 }}>{msg}</p>}
           {msg && !msg.toLowerCase().includes('error') && (
             <p style={{ marginTop: 10 }}>
-              <Link to="/login">Ir al login</Link>
+              <Link to="/login">Go to login</Link>
             </p>
           )}
         </form>

@@ -243,13 +243,13 @@ function HistoryCapacityPage() {
           <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </div>
         <div>
-          <label>Locación</label>
+          <label>Location</label>
           <select value={selectedLocId} onChange={(e) => setSelectedLocId(e.target.value)}>
             {locations.map(l => <option key={l._id} value={l._id}>{l.name}</option>)}
           </select>
         </div>
         <div>
-          <label>Producto</label>
+          <label>Product</label>
           <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)}>
             {stdOrder.map((p) => <option key={`std-${p}`} value={p}>{p}</option>)}
             {selectedLocation && summaries[selectedLocation._id] &&

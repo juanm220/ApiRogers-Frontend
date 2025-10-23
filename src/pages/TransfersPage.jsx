@@ -195,7 +195,7 @@ export default function TransfersPage() {
             {busy ? 'Registrando…' : 'Registrar transferencia'}
           </button>
           <button type="button" className="btn btn--secondary" onClick={clearAll} disabled={busy}>
-            Limpiar
+            Clean
           </button>
         </div>
       </form>

@@ -85,7 +85,7 @@ function UserEditModal({ open, onClose, user, onSaved, token, locations }) {
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="editUserTitle" onClick={(e)=>{ if(e.target===e.currentTarget) onClose?.(); }}>
       <div className="modal-card card" ref={cardRef}>
         <div className="modal-head">
-          <h3 id="editUserTitle" className="m0">Editar usuario</h3>
+          <h3 id="editUserTitle" className="m0">Edit user</h3>
           <button className="btn btn--ghost" onClick={onClose} aria-label="Cerrar">✕</button>
         </div>
 
@@ -93,11 +93,11 @@ function UserEditModal({ open, onClose, user, onSaved, token, locations }) {
           {error && <div className="alert alert--danger">{error}</div>}
           <div className="grid-2">
             <div>
-              <label>Nombre</label>
+              <label>Name</label>
               <input type="text" value={form.name} onChange={(e)=>set('name', e.target.value)} />
             </div>
             <div>
-              <label>Apellido</label>
+              <label>Lastname</label>
               <input type="text" value={form.lastname} onChange={(e)=>set('lastname', e.target.value)} />
             </div>
             <div>
@@ -115,24 +115,24 @@ function UserEditModal({ open, onClose, user, onSaved, token, locations }) {
           <div className="divider" />
 
           <details>
-            <summary><strong>Cambiar contraseña (opcional)</strong></summary>
+            <summary><strong>Change password (opcional)</strong></summary>
             <div className="grid-2" style={{ marginTop: 8 }}>
               <div>
-                <label>Nueva contraseña</label>
+                <label>New Password</label>
                 <input type="password" value={form.password} onChange={(e)=>set('password', e.target.value)} />
               </div>
               <div>
-                <label>Confirmar</label>
+                <label>Confirm password</label>
                 <input type="password" value={form.confirm} onChange={(e)=>set('confirm', e.target.value)} />
               </div>
             </div>
           </details>
 
-          <div className="hint">Si dejas la contraseña vacía, se mantiene la actual.</div>
+          <div className="hint">If you leave the password empty, the current one is kept.</div>
         </div>
 
         <div className="modal-foot">
-          <button className="btn btn--secondary" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button className="btn btn--secondary" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar cambios'}</button>
         </div>
       </div>
@@ -225,12 +225,12 @@ export default function AdminUsersPage() {
         <table className="table-excel" style={{ minWidth: 980 }}>
           <thead>
             <tr>
-              <th>Nombre</th>
-              <th>Apellido</th>
+              <th>Name</th>
+              <th>Lastname</th>
               <th>Rol</th>
               <th>Email</th>
               <th>Locations</th>
-              <th>Acciones</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -258,8 +258,8 @@ export default function AdminUsersPage() {
                     })}
                   </td>
                   <td>
-                    <button className="btn" onClick={() => openEdit(user)}>Editar</button>
-                    <button className="btn btn--danger" onClick={() => handleDelete(user._id)}>Eliminar</button>
+                    <button className="btn" onClick={() => openEdit(user)}>Edit</button>
+                    <button className="btn btn--danger" onClick={() => handleDelete(user._id)}>Delete</button>
                   </td>
                 </tr>
               );

@@ -27,8 +27,8 @@ function LoginPage() {
         role: res.data.user?.role
       }));
 
-      setMessage('¡Sesión iniciada correctamente!');
-      navigate('/dashboard');
+      setMessage('Session successfully logged in!');
+      navigate('/summary');
     } catch (error) {
       setMessage(error.response?.data?.message || 'Error al iniciar sesión');
     }
@@ -41,11 +41,11 @@ function LoginPage() {
 
         <form onSubmit={handleSubmit} noValidate>
           <div className="form-group">
-            <label htmlFor="email">Correo:</label>
+            <label htmlFor="email">Mail:</label>
             <input
               id="email"
               type="email"
-              placeholder="tu@correo.com"
+              placeholder="you@mail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -55,7 +55,7 @@ function LoginPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">Contraseña:</label>
+            <label htmlFor="password">Password:</label>
             <input
               id="password"
               type="password"
@@ -69,7 +69,7 @@ function LoginPage() {
           </div>
 
           <button type="submit" className="login-btn">
-            Iniciar Sesión
+            Login
           </button>
 
           {message && (
@@ -83,12 +83,12 @@ function LoginPage() {
           )}
         </form>
         <p style={{ marginTop: 12 }}>
-          ¿No tienes cuenta?
-          <Link to="/register"> Regístrate aquí</Link>
+          Don´t have an account?
+          <Link to="/register"> Register here</Link>
         </p>
         <p style={{ marginTop: 12 }}>
-          ¿Olvidaste tu contraseña? 
-          <Link to="/forgot-password">Recupérala aquí</Link>
+          Forgot your password? 
+          <Link to="/forgot-password">Recover it here</Link>
         </p>
       </div>
     </div>

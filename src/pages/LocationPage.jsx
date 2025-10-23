@@ -574,14 +574,14 @@ function LocationPage() {
             onChange={toggleAutosave}
             style={{ marginRight: 8 }}
           />
-          Auto-guardado por refrigerador
+          Auto-save by fridge
         </label>
       </div>
 
       <h2>Location: {locationData.name}</h2>
       {lastEdit && (
         <div className="pill" title={lastEdit.source ? `Fuente: ${lastEdit.source}` : undefined} style={{ margin: '6px 0 12px' }}>
-          Última edición: <b>{lastEdit.actorName || '—'}</b>
+          Last edition: <b>{lastEdit.actorName || '—'}</b>
           <span style={{ opacity: .8 }}> · {new Date(lastEdit.at).toLocaleString()}</span>
         </div>
       )}
@@ -596,7 +596,7 @@ function LocationPage() {
         ) : (
           <>
             <span className="pill">
-              Sesión activa desde:&nbsp;
+              Active session since:&nbsp;
               <b>{new Date(invActive.startedAt || Date.now()).toLocaleString()}</b>
             </span>
             <button onClick={handleCloseWithFinal} disabled={invBusy}>
@@ -679,12 +679,12 @@ function LocationPage() {
                 <div className="table-wrap table-wrap--shadow" style={{ position: 'relative' }}>
                   <table className="table-excel" aria-describedby={`desc-${fridge._id}`}>
                     <caption id={`desc-${fridge._id}`} style={{ display: 'none' }}>
-                      Tabla de productos del refrigerador {fridge.name}
+                      Board of products for fridges {fridge.name}
                     </caption>
                     <thead>
                       <tr>
-                        <th>Producto</th>
-                        <th className="num">Cantidad</th>
+                        <th>Product</th>
+                        <th className="num">Quantity</th>
                       </tr>
                     </thead>
                     <tbody>

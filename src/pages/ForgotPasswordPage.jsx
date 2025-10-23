@@ -12,19 +12,19 @@ export default function ForgotPasswordPage() {
     setMsg('');
     try {
       await API.post('/users/forgot-password', { email });
-      setMsg('Si el email existe, te enviaremos instrucciones. Revisa también la consola del servidor en modo dev.');
+      setMsg('If the email address exists, we will send you instructions. Also, check the server console in dev mode.');
     } catch (err) {
-      setMsg(err.response?.data?.message || 'Error al enviar la solicitud.');
+      setMsg(err.response?.data?.message || 'Error to send the request.');
     }
   };
 
   return (
     <div className="auth-page">
       <div className="login-container">
-        <h2>Recuperar contraseña</h2>
+        <h2>Recover password </h2>
         <form onSubmit={onSubmit}>
           <div className="form-group">
-            <label htmlFor="email">Correo:</label>
+            <label htmlFor="email">Mail:</label>
             <input
               id="email"
               type="email"
@@ -35,7 +35,7 @@ export default function ForgotPasswordPage() {
               required
             />
           </div>
-          <button type="submit" className="login-btn">Enviar enlace</button>
+          <button type="submit" className="login-btn">Send Link</button>
           {msg && <p className="success-message" style={{ marginTop: 10 }}>{msg}</p>}
         </form>
       </div>
