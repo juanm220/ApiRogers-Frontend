@@ -128,7 +128,7 @@ function NavBar() {
             value={selectedLoc}
             onChange={handleLocationChange}
           >
-            <option value="">— Cambiar Locación —</option>
+            <option value="">— Change Location —</option>
             {locations.map((loc) => (
               <option key={loc._id} value={loc._id}>{loc.name}</option>
             ))}

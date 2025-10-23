@@ -215,17 +215,17 @@ function LocationPage() {
   async function handleStartInventory() {
     if (invBusy) return;
     if (hasUnsaved) {
-      const ok = window.confirm('Tienes cambios sin guardar. ¿Iniciar sesión de inventario igualmente?');
+      const ok = window.confirm('You have unsaved changes. Should you log in to inventory anyway?');
       if (!ok) return;
     }
     setInvBusy(true);
     try {
       await API.post(`/locations/inventory-sessions/start`, { locationId }, { timeout: 15000 });
       await fetchActiveInv();
-      setToast({ type: 'ok', text: 'Sesión de inventario inicial iniciada.' });
+      setToast({ type: 'ok', text: 'Initial inventory session started.' });
     } catch (e) {
       console.error(e);
-      const msg = e?.response?.data?.message || 'No se pudo iniciar la sesión.';
+      const msg = e?.response?.data?.message || 'The session could not be started.';
       setToast({ type: 'error', text: msg });
     } finally {
       setInvBusy(false);
@@ -235,7 +235,7 @@ function LocationPage() {
   async function handleCloseWithFinal() {
     if (invBusy || !invActive?._id) return;
     if (hasUnsaved) {
-      const ok = window.confirm('Tienes cambios sin guardar. ¿Cerrar sesión e incluir lo que ves ahora como inventario final?');
+      const ok = window.confirm('You have unsaved changes. Sign out and include what you see now as the final inventory?');
       if (!ok) return;
     }
     setInvBusy(true);
@@ -376,7 +376,7 @@ function LocationPage() {
     );
 
     if (changed.length === 0) {
-      if (!silentOverlay) setToast({ type: 'ok', text: 'No hay cambios que guardar.' });
+      if (!silentOverlay) setToast({ type: 'ok', text: 'There are no changes to save.' });
       return;
     }
 
@@ -476,10 +476,10 @@ function LocationPage() {
         });
       }
 
-      if (!silentOverlay) setToast({ type: 'ok', text: 'Cambios guardados.' });
+      if (!silentOverlay) setToast({ type: 'ok', text: 'changes saved.' });
     } catch (err) {
       console.error(err);
-      setToast({ type: 'error', text: 'Error al guardar cambios.' });
+      setToast({ type: 'error', text: 'Error at saving changes' });
     } finally {
       // 🔚 Siempre quita el overlay manual, pase lo que pase
       if (!silentOverlay) setSavingFridgeId(null);
@@ -616,7 +616,7 @@ function LocationPage() {
               onChange={(e) => setNewName(e.target.value)}
               style={{ width: 280 }}
             />
-            <button onClick={handleRenameLocation}>Guardar</button>
+            <button onClick={handleRenameLocation}>Save</button>
           </div>
           <div className="push-right">
             <button className="btn btn--danger" onClick={handleDeleteLocation}>
@@ -754,12 +754,12 @@ function LocationPage() {
 
                 <div className="fridge-foot">
                   <button onClick={() => handleSaveFridge(fridge)} disabled={disabled}>
-                    {disabled ? 'Guardando…' : 'Guardar cambios'}
+                    {disabled ? 'Saving...' : 'save changes'}
                   </button>
                 </div>
 
                 {/* Overlay por guardado manual */}
-                {savingFridgeId === fridge._id && <SavingOverlay label={`Guardando "${fridge.name}"…`} />}
+                {savingFridgeId === fridge._id && <SavingOverlay label={`Saving "${fridge.name}"…`} />}
               </section>
             );
           })}
@@ -818,7 +818,7 @@ function LocationPage() {
   );
 }
 
-function SavingOverlay({ label = 'Guardando…' }) {
+function SavingOverlay({ label = 'Saving...' }) {
   return (
     <div
       role="dialog"

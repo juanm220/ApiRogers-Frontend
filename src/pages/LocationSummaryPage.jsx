@@ -42,8 +42,8 @@ function LocationSummaryPage() {
     return typeof i === 'number' ? i : 9999;
   };
 
-// Carga principal
-    useEffect(() => {
+  // Carga principal
+  useEffect(() => {
     const controller = new AbortController();
     (async () => {
         setLoading(true);
@@ -64,50 +64,102 @@ function LocationSummaryPage() {
         // GET  /locations/inventory-sessions/active?locationId=...
         // GET  /locations/inventory-sessions/:sessionId/summary
         const invMap = {};
+        
+        const resolveSession = async (locId) => {
+          if (!locId) return null;
+
+          try {
+            const activeRes = await API.get('/locations/inventory-sessions/active', {
+              params: { locationId: locId },
+              timeout: 12000,
+              signal: controller.signal,
+            });
+            const sess = activeRes.data?.session;
+            if (sess?._id) {
+              return { session: sess, closed: sess.status === 'closed' };
+            }
+          } catch (errActive) {
+            if (errActive?.name !== 'CanceledError') {
+              console.warn('Active session fetch error for loc', locId, errActive?.response?.status || errActive);
+            }
+          }
+
+          try {
+            const historyRes = await API.get('/locations/inventory-sessions/history', {
+              params: {
+                locationId: locId,
+                status: 'closed',
+                limit: 1,
+                sort: '-closedAt',
+              },
+              timeout: 12000,
+              signal: controller.signal,
+            });
+
+            const list = historyRes.data?.sessions
+              || historyRes.data?.data?.sessions
+              || historyRes.data?.data
+              || [];
+            const arr = Array.isArray(list) ? list : [list];
+            const candidate = arr.find((s) => s && s.status === 'closed');
+            if (candidate?._id) {
+              return { session: candidate, closed: true };
+            }
+          } catch (errHistory) {
+            if (errHistory?.name !== 'CanceledError') {
+              console.warn('Inventory session history fetch error for loc', locId, errHistory?.response?.status || errHistory);
+            }
+          }
+
+          return null;
+        };
+
         await Promise.all(
-            (locs || []).map(async (loc) => {
+          (locs || []).map(async (loc) => {
+            const locId = loc._id;
+            if (!locId) return;
             try {
-                const activeRes = await API.get('/locations/inventory-sessions/active', {
-                params: { locationId: loc._id },
-                timeout: 12000,
-                });
-                const sess = activeRes.data?.session;
-                if (!sess?._id) return;
+              const sessionInfo = await resolveSession(locId);
+              const sess = sessionInfo?.session;
+              if (!sess?._id) return;
 
-                const sumRes = await API.get(`/locations/inventory-sessions/${sess._id}/summary`, {
+              const sumRes = await API.get(`/locations/inventory-sessions/${sess._id}/summary`, {
                 timeout: 15000,
-                });
+                signal: controller.signal,
+              });
 
-                const rows = sumRes.data?.data?.rows || [];
-                const closed = !!sumRes.data?.data?.closedAt;
 
-                const initial = {};
-                const final = {};
-                const transfer = {};
-                for (const row of rows) {
+              const rows = sumRes.data?.data?.rows || [];
+              const closedAt = sumRes.data?.data?.closedAt;
+              const closed = sessionInfo?.closed || !!closedAt;
+
+              const initial = {};
+              const final = {};
+              const transfer = {};
+              for (const row of rows) {
                 const name = row.productName;
                 initial[name] = Number(row.inicial) || 0;
                 if (row.final == null || Number.isNaN(Number(row.final))) {
-                    // sesión abierta: sin final
+                  // sesión abierta: sin final
                 } else {
-                    final[name] = Number(row.final) || 0;
+                  final[name] = Number(row.final) || 0;
                 }
                 const net = (Number(row.entradas) || 0) - (Number(row.salidas) || 0);
                 if (net) transfer[name] = net;
-                }
-                invMap[loc._id] = { initial, final, transfer, closed };
+              }
+              invMap[locId] = { initial, final, transfer, closed };
             } catch (e) {
-                // sigue con las demás locaciones
-                console.warn('Inv summary fetch error for loc', loc._id, e?.response?.status || e);
+              // sigue con las demás locaciones
+              console.warn('Inv summary fetch error for loc', locId, e?.response?.status || e);
             }
             })
         );
         setInvSummaries(invMap);
         } catch (e) {
         if (e?.name !== 'CanceledError') {
-            console.error('Summary load error:', e);
-            setErrMsg('Error cargando el resumen');
-            setLoading(false);
+          console.error('Summary load error:', e);
+          setErrMsg('Error cargando el resumen');
+          setLoading(false);
         }
         }
     })();

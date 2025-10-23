@@ -37,7 +37,7 @@ function LoginPage() {
   return (
     <div className="auth-page">
       <div className="login-container" role="main" aria-label="Formulario de inicio de sesión">
-        <h2>Iniciar Sesión</h2>
+        <h2>Login</h2>
 
         <form onSubmit={handleSubmit} noValidate>
           <div className="form-group">
