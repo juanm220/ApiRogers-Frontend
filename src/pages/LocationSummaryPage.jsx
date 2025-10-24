@@ -19,7 +19,7 @@ function LocationSummaryPage() {
   const [locations, setLocations] = useState([]);
   const [summaries, setSummaries] = useState({});
   const [loading, setLoading] = useState(true);
-  const [errMsg, setErrMsg] = useState('');
+  const [errMsg, setErrMsg] = useState('')
 
   // thresholds / colores
   const [colorByCapacity] = useState(true);
@@ -211,13 +211,13 @@ function LocationSummaryPage() {
   return (
     <div className="main-container">
       <NavBar />
-      <h2 style={{ marginTop: '0.5rem' }}>Resumen por Locación</h2>
+      <h2 style={{ marginTop: '0.5rem' }}>Summary by location</h2>
 
       {/* Controles */}
       <div className="card" style={{ marginBottom: '1rem', display: 'grid', gap: 12 }}>
         <div className="grid-2">
           <div>
-            <label>Buscar locación</label>
+            <label>Search by location</label>
             <input
               type="text"
               placeholder="Ej: Sede Norte"
@@ -226,7 +226,7 @@ function LocationSummaryPage() {
             />
           </div>
           <div className="flex-row" style={{ alignItems: 'center', gap: 10 }}>
-            <label>Ocultar locaciones sin resultados</label>
+            <label>Hide locations without results</label>
             <input
               type="checkbox"
               checked={hideEmptyAfterFilter}
@@ -239,7 +239,7 @@ function LocationSummaryPage() {
                 checked={denseRows}
                 onChange={(e) => setDenseRows(e.target.checked)}
               />
-              Filas compactas
+              compact rows
             </label>
           </div>
         </div>
@@ -252,7 +252,7 @@ function LocationSummaryPage() {
             aria-pressed={prodFilter === 'all'}
             title="Ver todos los productos"
           >
-            Todos
+            All
           </button>
           <button
             type="button"
@@ -261,7 +261,7 @@ function LocationSummaryPage() {
             aria-pressed={prodFilter === 'critical'}
             title={`≤ ${Math.round(lowThreshold * 100)}%`}
           >
-            Críticos
+            Critics
           </button>
           <button
             type="button"
@@ -270,7 +270,7 @@ function LocationSummaryPage() {
             aria-pressed={prodFilter === 'warn'}
             title={`≤ ${Math.round(warnThreshold * 100)}%`}
           >
-            Advertencia
+            Warnings
           </button>
           <button
             type="button"
@@ -284,7 +284,7 @@ function LocationSummaryPage() {
         </div>
       </div>
 
-      {loading && <p>Cargando…</p>}
+      {loading && <p>Loading...</p>}
       {errMsg && <p style={{ color: 'crimson' }}>{errMsg}</p>}
 
       <div className="loc-grid" style={{ gap: 'clamp(12px, 2.5vmin, 20px)' }}>
@@ -331,9 +331,9 @@ function LocationSummaryPage() {
               <header className="loc-head">
                 <h3 className="m0">{loc.name}</h3>
                 <div className="loc-meta">
-                  <span className="pill">Total productos: <b>{s.totalLocation || 0}</b></span>
-                  <span className="pill">Usuarios: <b>{loc.usersCount || 0}</b></span>
-                  <span className="pill">Neveras: <b>{(loc.refrigerators || []).length || 0}</b></span>
+                  <span className="pill">Total Products: <b>{s.totalLocation || 0}</b></span>
+                  <span className="pill">Users: <b>{loc.usersCount || 0}</b></span>
+                  <span className="pill">Fridges: <b>{(loc.refrigerators || []).length || 0}</b></span>
                   {!sessionClosed && (
                     <span className="pill" title="La sesión sigue abierta">Sesión abierta</span>
                   )}
@@ -341,7 +341,7 @@ function LocationSummaryPage() {
               </header>
 
               {rows.length === 0 ? (
-                <em>No hay productos que coincidan con el filtro.</em>
+                <em>There are not products that match the filter.</em>
               ) : (
                 <div className="table-wrap table-wrap--shadow">
                   <table
@@ -350,8 +350,8 @@ function LocationSummaryPage() {
                   >
                     <thead>
                       <tr>
-                        <th style={{ width: '34%' }}>Producto</th>
-                        <th className="num" style={{ width: 110 }}>Inicial</th>
+                        <th style={{ width: '34%' }}>Product</th>
+                        <th className="num" style={{ width: 110 }}>Innitial</th>
                         <th className="num" style={{ width: 110 }}>Final</th>
                         {showSalesCol && (
                           <th
@@ -362,10 +362,10 @@ function LocationSummaryPage() {
                             Ventas (sesión)
                           </th>
                         )}
-                        <th className="num" style={{ width: 110 }}>Actual</th>
-                        <th className="num" style={{ width: 180 }}>Capacidad efectiva</th>
-                        <th className="num" style={{ width: 120 }}>Ocupación</th>
-                        <th className="num" style={{ width: 120 }}>Faltan</th>
+                        <th className="num" style={{ width: 110 }}>Current</th>
+                        <th className="num" style={{ width: 180 }}>Capacity</th>
+                        <th className="num" style={{ width: 120 }}>Occupation</th>
+                        <th className="num" style={{ width: 120 }}>Missing to be full</th>
                       </tr>
                     </thead>
                     <tbody>

@@ -597,10 +597,10 @@ function LocationPage() {
 
       {/* Inventario (sesión) */}
       <div className="card" style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <strong style={{ marginRight: 8 }}>Inventario</strong>
+        <strong style={{ marginRight: 8 }}>Inventory</strong>
         {!invActive ? (
           <button onClick={handleStartInventory} disabled={invBusy}>
-            {invBusy ? 'Iniciando…' : 'Iniciar sesión (Inicial)'}
+            {invBusy ? 'starting...' : 'start session (Initial)'}
           </button>
         ) : (
           <>
@@ -618,7 +618,7 @@ function LocationPage() {
       {(role === 'admin' || role === 'superuser') && (
         <div className="flex-row stack-sm" style={{ marginBottom: '1rem' }}>
           <div className="flex-row" style={{ gap: 8 }}>
-            <label>Renombrar locación:</label>
+            <label>Rename location: </label>
             <input
               type="text"
               value={newName}
@@ -629,7 +629,7 @@ function LocationPage() {
           </div>
           <div className="push-right">
             <button className="btn btn--danger" onClick={handleDeleteLocation}>
-              Eliminar locación
+              Delete location
             </button>
           </div>
         </div>
@@ -661,7 +661,7 @@ function LocationPage() {
                   <div className="fridge-actions">
                     {autoSave && (
                       <span className="pill" title="Los cambios confirmados se guardan solos">
-                        Auto-guardado: <b>ON</b>
+                        Auto-save: <b>ON</b>
                       </span>
                     )}
                     {(role === 'admin' || role === 'superuser') && (
@@ -779,7 +779,7 @@ function LocationPage() {
 
       {(role === 'admin' || role === 'superuser') && (
         <div className="card" style={{ marginTop: '1rem' }}>
-          <h4>Crear nuevo refrigerador</h4>
+          <h4>Create new fridge</h4>
           <div className="flex-row stack-sm">
             <input
               type="text"
@@ -788,7 +788,7 @@ function LocationPage() {
               onChange={(e) => setNewFridgeName(e.target.value)}
               style={{ maxWidth: 360 }}
             />
-            <button onClick={handleCreateFridge}>Crear</button>
+            <button onClick={handleCreateFridge}>Create</button>
           </div>
         </div>
       )}
