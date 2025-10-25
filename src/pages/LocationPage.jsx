@@ -1,4 +1,3 @@
-// src/pages/LocationPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import API from '../apiService';
@@ -20,14 +19,6 @@ function useQueryMode() {
   return MODE_INITIAL;
 }
 
-// Helper
-const isStableNumber = (s) => /^\s*\d+\s*$/.test(String(s ?? ''));
-const toInt = (s) => {
-  if (s === '' || s == null) return 0;
-  const n = parseInt(String(s).replace(/\D+/g, ''), 10);
-  return Number.isFinite(n) ? n : 0;
-};
-
 function LocationPage() {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -35,7 +26,7 @@ function LocationPage() {
   const role = useSelector((s) => s.auth.role);
   const viewMode = useQueryMode(); // 'initial' | 'final'
 
-  // Inventory session
+  // Inventory (session)
   const [invActive, setInvActive] = useState(null); // { _id, startedAt } | null
   const [invBusy, setInvBusy] = useState(false);
 
@@ -46,22 +37,24 @@ function LocationPage() {
   const [newFridgeName, setNewFridgeName] = useState('');
   const [standardOrder, setStandardOrder] = useState([]);
 
-  // Last edit (who/when)
+  // Last edit meta
   const [lastEdit, setLastEdit] = useState(null); // { at: ISO, actorName: string|null, source?:string }
 
-  // Edits by mode: { initial: { [fridgeId]: { [productName]: "12" } }, final: { ... } }
+  // Edits per mode:
+  // quantities: { [fridgeId]: { [productName]: "12" } }
   const [fridgeEditsByMode, setFridgeEditsByMode] = useState({
     [MODE_INITIAL]: {},
     [MODE_FINAL]: {},
   });
 
-  // Persistent product parts UI state (mirrors backend parts)
-  // { [fridgeId]: { [productName]: [{ id, label, qtyStr }] } }
-  const [fridgeParts, setFridgeParts] = useState({});
+  // Parts (per mode): { [fridgeId]: { [productName]: [{label, quantity}] } }
+  const [partsEditsByMode, setPartsEditsByMode] = useState({
+    [MODE_INITIAL]: {},
+    [MODE_FINAL]: {},
+  });
 
-  // Toggle visibility per product parts panel
-  // { [fridgeId]: { [productName]: true|false } }
-  const [partsOpen, setPartsOpen] = useState({});
+  // Expanded state per product row (UI only, auto-open if parts exist)
+  const [expandedMap, setExpandedMap] = useState({}); // { [fridgeId]: { [productName]: boolean } }
 
   // UI states
   const [savingFridgeId, setSavingFridgeId] = useState(null);
@@ -71,7 +64,9 @@ function LocationPage() {
     return v ? v === '1' : true;
   });
 
-  // autosave coalescing
+  const isStableNumber = (s) => /^\s*\d+\s*$/.test(String(s ?? ''));
+
+  // autosave orchestration
   const inFlight = useRef({});
   const pending = useRef({});
   const [rowSaving, setRowSaving] = useState({});
@@ -82,7 +77,6 @@ function LocationPage() {
   const debouncers = useRef({});
   const inputRefs = useRef({});
 
-  // Order helper
   const orderIndex = (name) => {
     const i = (standardOrder || []).findIndex(
       (s) => String(s).toLowerCase() === String(name).toLowerCase()
@@ -90,7 +84,7 @@ function LocationPage() {
     return i === -1 ? 9999 : i;
   };
 
-  // Baseline from backend for initial
+  // Baseline for initial mode = backend quantities
   const baselineInitial = useMemo(() => {
     const m = {};
     if (locationData?.refrigerators) {
@@ -105,14 +99,34 @@ function LocationPage() {
     return m;
   }, [locationData]);
 
-  // Baseline zero for final
+  // Baseline for final mode = empty (0)
   const baselineFinal = useMemo(() => {
     const m = {};
     if (locationData?.refrigerators) {
       locationData.refrigerators.forEach((fr) => {
         const inner = {};
         fr.products.forEach((p) => {
-          inner[p.productName] = ''; // '' = 0
+          inner[p.productName] = '';
+        });
+        m[fr._id] = inner;
+      });
+    }
+    return m;
+  }, [locationData]);
+
+  // Baseline parts (for change detection) from backend
+  const baselineParts = useMemo(() => {
+    const m = {};
+    if (locationData?.refrigerators) {
+      locationData.refrigerators.forEach((fr) => {
+        const inner = {};
+        fr.products.forEach((p) => {
+          inner[p.productName] = Array.isArray(p.parts)
+            ? p.parts.map((pp) => ({
+                label: String(pp.label || ''),
+                quantity: Number(pp.quantity) || 0,
+              }))
+            : [];
         });
         m[fr._id] = inner;
       });
@@ -121,15 +135,21 @@ function LocationPage() {
   }, [locationData]);
 
   const activeBaseline = viewMode === MODE_FINAL ? baselineFinal : baselineInitial;
+
   const fridgeEdits = useMemo(
     () => fridgeEditsByMode[viewMode] || {},
     [fridgeEditsByMode, viewMode]
+  );
+  const partsEdits = useMemo(
+    () => partsEditsByMode[viewMode] || {},
+    [partsEditsByMode, viewMode]
   );
   const thisDirtyMap = useMemo(
     () => dirtyMapByMode[viewMode] || {},
     [dirtyMapByMode, viewMode]
   );
 
+  // Unsaved check (quantities + parts vs baselines)
   const hasUnsaved = useMemo(() => {
     const frIds = Object.keys(fridgeEdits || {});
     for (const frId of frIds) {
@@ -140,10 +160,25 @@ function LocationPage() {
         if (String(current) !== String(base)) return true;
       }
     }
+    const frPartIds = Object.keys(partsEdits || {});
+    for (const frId of frPartIds) {
+      const prodNames = Object.keys(partsEdits[frId] || {});
+      for (const pName of prodNames) {
+        const cur = (partsEdits[frId] || {})[pName] || [];
+        const base = (baselineParts[frId] || {})[pName] || [];
+        const norm = (arr) =>
+          (arr || []).map((x) => ({
+            label: String(x.label || ''),
+            quantity: Number(x.quantity) || 0,
+          }));
+        const a = JSON.stringify(norm(cur));
+        const b = JSON.stringify(norm(base));
+        if (a !== b) return true;
+      }
+    }
     return false;
-  }, [fridgeEdits, activeBaseline]);
+  }, [fridgeEdits, activeBaseline, partsEdits, baselineParts]);
 
-  // Keep visible only simple saving flags (avoid stuck overlays)
   const hasAnySaving =
     savingFridgeId != null ||
     Object.values(rowSaving).some((m) => Object.values(m || {}).some(Boolean));
@@ -159,7 +194,7 @@ function LocationPage() {
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [hasUnsaved, hasAnySaving]);
 
-  // ---- Fetch ----
+  // ---- data fetch ----
   useEffect(() => {
     if (!locationId) {
       setLoading(false);
@@ -172,45 +207,57 @@ function LocationPage() {
           signal: controller.signal,
           timeout: 15000,
         });
-        const data = res.data;
-        setLocationData(data);
-        setNewName(data?.name || '');
+        setLocationData(res.data);
+        setNewName(res.data?.name || '');
 
-        // Initialize edits per mode
+        // initialize edits for both modes + parts from backend
         const initInitial = {};
         const initFinal = {};
-        const parts = {};
+        const initParts = {}; // same for both modes initially (from backend)
+        const expInit = {};
 
-        if (data?.refrigerators) {
-          data.refrigerators.forEach((fr) => {
+        if (res.data?.refrigerators) {
+          res.data.refrigerators.forEach((fr) => {
             const eInitial = {};
             const eFinal = {};
-            const partsForFr = {};
-
+            const pMap = {};
+            const expMap = {};
             fr.products.forEach((p) => {
-              // initial baseline from backend
+              // initial: backend values
               eInitial[p.productName] = p.quantity === 0 ? '' : String(p.quantity);
-              // final baseline zero
+              // final: zero baseline
               eFinal[p.productName] = '';
 
-              // load parts from backend (persistent)
-              const pParts = Array.isArray(p.parts) ? p.parts : [];
-              partsForFr[p.productName] = pParts.map((line, idx) => ({
-                id: `${fr._id}-${p.productName}-${idx}-${Date.now()}`,
-                label: String(line.label || ''),
-                qtyStr: String(line.quantity ?? 0),
-              }));
-            });
+              // parts from backend (if any)
+              const parts = Array.isArray(p.parts)
+                ? p.parts.map((pp) => ({
+                    label: String(pp.label || ''),
+                    quantity: Number(pp.quantity) || 0,
+                  }))
+                : [];
 
+              pMap[p.productName] = parts;
+              // auto expand if there are additional parts saved
+              expMap[p.productName] = parts.length > 0;
+            });
             initInitial[fr._id] = eInitial;
             initFinal[fr._id] = eFinal;
-            parts[fr._id] = partsForFr;
+            initParts[fr._id] = pMap;
+            expInit[fr._id] = expMap;
           });
         }
 
-        setFridgeEditsByMode({ [MODE_INITIAL]: initInitial, [MODE_FINAL]: initFinal });
+        setFridgeEditsByMode({
+          [MODE_INITIAL]: initInitial,
+          [MODE_FINAL]: initFinal,
+        });
+        // use same parts for both modes initially (you can diverge later per mode)
+        setPartsEditsByMode({
+          [MODE_INITIAL]: initParts,
+          [MODE_FINAL]: JSON.parse(JSON.stringify(initParts)),
+        });
         setDirtyMapByMode({ [MODE_INITIAL]: {}, [MODE_FINAL]: {} });
-        setFridgeParts(parts);
+        setExpandedMap(expInit);
       } catch (err) {
         if (err?.name !== 'CanceledError') {
           console.error('Error fetching location data:', err);
@@ -222,7 +269,7 @@ function LocationPage() {
     return () => controller.abort();
   }, [locationId, token]);
 
-  // Last edit (optional)
+  // Last edit meta
   useEffect(() => {
     if (!locationId) return;
     const ac = new AbortController();
@@ -262,7 +309,7 @@ function LocationPage() {
     })();
   }, [token]);
 
-  // ===== Inventory sessions =====
+  // ======== Inventory session ========
   async function fetchActiveInv() {
     try {
       const r = await API.get(`/locations/inventory-sessions/active`, {
@@ -285,11 +332,27 @@ function LocationPage() {
     const out = [];
     for (const fr of locationData?.refrigerators || []) {
       const editsForFr = (fridgeEditsByMode[viewMode] || {})[fr._id] || {};
+      const partsForFr = (partsEditsByMode[viewMode] || {})[fr._id] || {};
       const products = (fr.products || []).map((p) => {
         const raw = editsForFr[p.productName];
         const q =
-          raw === '' || raw == null ? 0 : parseInt(String(raw).replace(/\D+/g, ''), 10) || 0;
-        return { productName: p.productName, quantity: q };
+          raw === '' || raw == null
+            ? 0
+            : parseInt(String(raw).replace(/\D+/g, ''), 10) || 0;
+        const parts = Array.isArray(partsForFr[p.productName])
+          ? partsForFr[p.productName].map((pp) => ({
+              label: String(pp.label || ''),
+              quantity: Math.max(0, Number(pp.quantity) || 0),
+            }))
+          : [];
+        const totalFromParts =
+          parts.length > 0 ? parts.reduce((a, b) => a + (Number(b.quantity) || 0), 0) : null;
+
+        return {
+          productName: p.productName,
+          quantity: totalFromParts != null ? totalFromParts : q,
+          ...(parts.length ? { parts } : {}),
+        };
       });
       out.push({ fridgeId: fr._id, products });
     }
@@ -305,7 +368,7 @@ function LocationPage() {
       setToast({ type: 'ok', text: 'Initial inventory session started.' });
     } catch (e) {
       console.error(e);
-      const msg = e?.response?.data?.message || 'Could not start the session.';
+      const msg = e?.response?.data?.message || 'The session could not be started.';
       setToast({ type: 'error', text: msg });
     } finally {
       setInvBusy(false);
@@ -315,7 +378,7 @@ function LocationPage() {
   async function handleCloseWithFinal() {
     if (invBusy || !invActive?._id) return;
     const ok = window.confirm(
-      `The session will be closed using the values from the "${viewMode === MODE_FINAL ? 'Final' : 'Initial'}" view. Confirm?`
+      `The session will be closed with the values from the "${viewMode === MODE_FINAL ? 'Final' : 'Initial'}" view. Confirm?`
     );
     if (!ok) return;
 
@@ -342,7 +405,7 @@ function LocationPage() {
     }
   }
 
-  // --- Admin actions ---
+  // ---- admin actions ----
   const handleRenameLocation = async () => {
     if (role !== 'admin' && role !== 'superuser') return;
     if (!newName.trim()) return alert('Name cannot be empty.');
@@ -409,7 +472,9 @@ function LocationPage() {
   const handleDeleteFridge = async (fridge) => {
     if (!window.confirm(`Are you sure you want to delete fridge ${fridge.name}?`)) return;
     try {
-      await API.delete(`/locations/${locationId}/refrigerators/${fridge._id}`, { timeout: 12000 });
+      await API.delete(`/locations/${locationId}/refrigerators/${fridge._id}`, {
+        timeout: 12000,
+      });
       const refetch = await API.get(`/locations/${locationId}`, { timeout: 12000 });
       setLocationData(refetch.data);
       setToast({ type: 'ok', text: 'Fridge deleted!' });
@@ -418,92 +483,143 @@ function LocationPage() {
     }
   };
 
-  // ===== Parts panel handlers =====
-  const toggleParts = (fridgeId, productName) => {
-    setPartsOpen((prev) => ({
-      ...prev,
-      [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: !prev?.[fridgeId]?.[productName] },
+  // ---- parts helpers ----
+  const getParts = (fridgeId, productName) =>
+    ((partsEdits[fridgeId] || {})[productName] || []).map((p) => ({
+      label: String(p.label || ''),
+      quantity: String(p.quantity ?? ''),
     }));
+
+  const setParts = (fridgeId, productName, nextParts) => {
+    setPartsEditsByMode((prev) => {
+      const copy = { ...prev };
+      const byMode = { ...(copy[viewMode] || {}) };
+      const fr = { ...(byMode[fridgeId] || {}) };
+      fr[productName] = nextParts;
+      byMode[fridgeId] = fr;
+      copy[viewMode] = byMode;
+      return copy;
+    });
   };
 
-  const addPartLine = (fridgeId, productName) => {
-    setPartsOpen((prev) => ({
-      ...prev,
-      [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: true },
-    }));
-    setFridgeParts((prev) => {
-      const fr = { ...(prev[fridgeId] || {}) };
-      const arr = [...(fr[productName] || [])];
-      arr.push({
-        id: `${fridgeId}-${productName}-${Date.now()}`,
-        label: '',
-        qtyStr: '0',
+  const totalFromParts = (partsArr) =>
+    (partsArr || []).reduce((a, b) => a + (parseInt(String(b.quantity || '0'), 10) || 0), 0);
+
+  const ensureExpanded = (fridgeId, productName, expanded) => {
+    setExpandedMap((prev) => {
+      const copy = { ...prev };
+      const fr = { ...(copy[fridgeId] || {}) };
+      fr[productName] = expanded;
+      copy[fridgeId] = fr;
+      return copy;
+    });
+  };
+
+  // Improved: seed the primary part from what the user currently sees in the main cell
+  const addPart = (fridgeId, productName) => {
+    // Read backend qty for this product (used for Initial mode when no edit yet)
+    const fr = (locationData?.refrigerators || []).find((x) => String(x._id) === String(fridgeId));
+    const backendQty = fr
+      ? (fr.products.find((p) => p.productName === productName)?.quantity || 0)
+      : 0;
+
+    // Value currently visible in the main cell
+    const mainNow =
+      (fridgeEdits[fridgeId] || {})[productName] ??
+      (viewMode === MODE_INITIAL ? String(backendQty) : '');
+
+    const curParts = getParts(fridgeId, productName);
+    const out = [...curParts];
+
+    if (out.length === 0) {
+      const seedQty = Math.max(0, parseInt(String(mainNow || '0'), 10) || 0);
+      out.push({ label: 'Primary', quantity: seedQty });
+
+      // keep the main cell in sync with the parts sum (same value)
+      setFridgeEditsByMode((prev) => {
+        const copy = { ...prev };
+        const byMode = { ...(copy[viewMode] || {}) };
+        const m = { ...(byMode[fridgeId] || {}) };
+        m[productName] = seedQty === 0 ? '' : String(seedQty);
+        byMode[fridgeId] = m;
+        copy[viewMode] = byMode;
+        return copy;
       });
-      fr[productName] = arr;
-      return { ...prev, [fridgeId]: fr };
-    });
-    // Trigger autosave debounce on the fridge (sum will change when user edits)
+    }
+
+    // Add a new empty part the user can fill (e.g., "Bottom shelf")
+    out.push({ label: 'Part', quantity: '' });
+
+    setParts(fridgeId, productName, out);
+    ensureExpanded(fridgeId, productName, true);
   };
 
-  const removePartLine = (fridgeId, productName, id) => {
-    setFridgeParts((prev) => {
-      const fr = { ...(prev[fridgeId] || {}) };
-      const arr = (fr[productName] || []).filter((x) => x.id !== id);
-      fr[productName] = arr;
-      return { ...prev, [fridgeId]: fr };
+  const removePartAt = (fridgeId, productName, idx) => {
+    const cur = getParts(fridgeId, productName);
+    if (idx < 0 || idx >= cur.length) return;
+    const out = cur.filter((_, i) => i !== idx);
+    setParts(fridgeId, productName, out);
+
+    const sum = totalFromParts(out);
+    // reflect new total in main cell
+    setFridgeEditsByMode((prev) => {
+      const copy = { ...prev };
+      const byMode = { ...(copy[viewMode] || {}) };
+      const fr = { ...(byMode[fridgeId] || {}) };
+      fr[productName] = sum === 0 ? '' : String(sum);
+      byMode[fridgeId] = fr;
+      copy[viewMode] = byMode;
+      return copy;
     });
-    // After removing, recompute total and update edits
-    recomputeTotalFromParts(fridgeId, productName);
+
+    ensureExpanded(fridgeId, productName, out.length > 0);
     queueAutoSave(fridgeId);
   };
 
-  const changePartField = (fridgeId, productName, id, field, value) => {
-    setFridgeParts((prev) => {
-      const fr = { ...(prev[fridgeId] || {}) };
-      const arr = [...(fr[productName] || [])];
-      const idx = arr.findIndex((x) => x.id === id);
-      if (idx !== -1) {
-        arr[idx] = { ...arr[idx], [field]: value };
-      }
-      fr[productName] = arr;
-      return { ...prev, [fridgeId]: fr };
+  const updatePart = (fridgeId, productName, idx, field, value) => {
+    const cur = getParts(fridgeId, productName);
+    if (idx < 0 || idx >= cur.length) return;
+    const out = cur.map((p, i) =>
+      i === idx
+        ? {
+            ...p,
+            [field]: field === 'quantity' ? value : String(value || ''),
+          }
+        : p
+    );
+    setParts(fridgeId, productName, out);
+
+    const sum = totalFromParts(out);
+    // reflect in main cell
+    setFridgeEditsByMode((prev) => {
+      const copy = { ...prev };
+      const byMode = { ...(copy[viewMode] || {}) };
+      const fr = { ...(byMode[fridgeId] || {}) };
+      fr[productName] = sum === 0 ? '' : String(sum);
+      byMode[fridgeId] = fr;
+      copy[viewMode] = byMode;
+      return copy;
     });
 
-    if (field === 'qtyStr' && isStableNumber(value)) {
-      // Update total immediately
-      recomputeTotalFromParts(fridgeId, productName);
+    // mark dirty
+    setDirtyMapByMode((prev) => {
+      const copy = { ...prev };
+      const dm = { ...(copy[viewMode] || {}) };
+      dm[fridgeId] = { ...(dm[fridgeId] || {}), [productName]: true };
+      copy[viewMode] = dm;
+      return copy;
+    });
+
+    // autosave
+    if (isStableNumber(value) || field === 'label') {
       queueAutoSave(fridgeId);
     }
   };
 
-  const recomputeTotalFromParts = (fridgeId, productName) => {
-    const arr = (fridgeParts?.[fridgeId]?.[productName] || []);
-    const sum = arr.reduce((acc, l) => acc + toInt(l.qtyStr), 0);
-    // Update active mode edit total
-    setFridgeEditsByMode((prev) => {
-      const copy = { ...prev };
-      const modeMap = { ...(copy[viewMode] || {}) };
-      const fr = { ...(modeMap[fridgeId] || {}) };
-      fr[productName] = sum === 0 ? '' : String(sum);
-      modeMap[fridgeId] = fr;
-      copy[viewMode] = modeMap;
-      return copy;
-    });
-    // Mark dirty
-    setDirtyMapByMode((prev) => {
-      const copy = { ...prev };
-      const dmMode = { ...(copy[viewMode] || {}) };
-      const dmFr = { ...(dmMode[fridgeId] || {}) };
-      dmFr[productName] = true;
-      dmMode[fridgeId] = dmFr;
-      copy[viewMode] = dmMode;
-      return copy;
-    });
-  };
-
-  // ===== Autosave =====
+  // ---- edits / autosave ----
   const queueAutoSave = (fridgeId, delay = 800) => {
     if (!autoSave) return;
+
     if (debouncers.current[fridgeId]) {
       clearTimeout(debouncers.current[fridgeId]);
       debouncers.current[fridgeId] = null;
@@ -515,6 +631,7 @@ function LocationPage() {
         pending.current[fridgeId] = true;
         return;
       }
+
       inFlight.current[fridgeId] = true;
       try {
         await doSaveFridge(fridgeId, { silentOverlay: true });
@@ -540,7 +657,6 @@ function LocationPage() {
       return copy;
     });
   };
-
   const updateDirtyMap = (mode, fn) => {
     setDirtyMapByMode((prev) => {
       const copy = { ...prev };
@@ -550,6 +666,16 @@ function LocationPage() {
   };
 
   const handleQuantityChange = (fridgeId, productName, newVal) => {
+    // If parts exist for this product, main cell = primary part
+    const curParts = getParts(fridgeId, productName);
+    if (curParts.length > 0) {
+      // Update primary part (index 0)
+      updatePart(fridgeId, productName, 0, 'quantity', newVal);
+      ensureExpanded(fridgeId, productName, true);
+      return;
+    }
+
+    // Otherwise it's a plain single-cell quantity
     updateEdits(viewMode, (prev) => ({
       ...prev,
       [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: newVal },
@@ -564,45 +690,81 @@ function LocationPage() {
     }
   };
 
-  // ===== Save (manual + autosave) =====
-  const doSaveFridge = async (fridgeId, { silentOverlay = false } = {}) => {
+  // Build updates array mixing quantity + parts for changed products
+  const buildBatchUpdatesForFridge = (fridgeId) => {
     const edits = (fridgeEditsByMode[viewMode] || {})[fridgeId] || {};
-    const currentBase =
-      (viewMode === MODE_FINAL ? baselineFinal : baselineInitial)[fridgeId] || {};
-    const changed = Object.keys(edits).filter(
-      (p) => String(edits[p] ?? '') !== String(currentBase[p] ?? '')
-    );
+    const parts = (partsEditsByMode[viewMode] || {})[fridgeId] || {};
+    const baseQ = (viewMode === MODE_FINAL ? baselineFinal : baselineInitial)[fridgeId] || {};
+    const baseParts = baselineParts[fridgeId] || {};
 
-    if (changed.length === 0) {
-      if (!silentOverlay) setToast({ type: 'ok', text: 'No changes to save.' });
+    const changedNames = new Set();
+
+    // changes in quantities
+    Object.keys(edits).forEach((p) => {
+      if (String(edits[p] ?? '') !== String(baseQ[p] ?? '')) {
+        changedNames.add(p);
+      }
+    });
+
+    // changes in parts
+    Object.keys(parts).forEach((p) => {
+      const cur = parts[p] || [];
+      const base = baseParts[p] || [];
+      const norm = (arr) =>
+        (arr || []).map((x) => ({
+          label: String(x.label || ''),
+          quantity: Number(x.quantity) || 0,
+        }));
+      if (JSON.stringify(norm(cur)) !== JSON.stringify(norm(base))) {
+        changedNames.add(p);
+      }
+    });
+
+    if (!changedNames.size) return [];
+
+    const updates = [];
+    for (const pName of changedNames) {
+      const curQty = Math.max(0, parseInt(String(edits[pName] || '0'), 10) || 0);
+      const curParts = Array.isArray(parts[pName]) ? parts[pName] : [];
+      const cleanParts = curParts
+        .map((pp) => ({
+          label: String(pp.label || ''),
+          quantity: Math.max(0, Number(pp.quantity) || 0),
+        }))
+        .filter((pp) => Number.isFinite(pp.quantity));
+
+      const totalFromParts =
+        cleanParts.length > 0
+          ? cleanParts.reduce((a, b) => a + (Number(b.quantity) || 0), 0)
+          : null;
+
+      updates.push({
+        productName: pName,
+        quantity: totalFromParts != null ? totalFromParts : curQty,
+        ...(cleanParts.length ? { parts: cleanParts } : {}),
+      });
+    }
+    return updates;
+  };
+
+  // Save (used by autosave and manual)
+  const doSaveFridge = async (fridgeId, { silentOverlay = false } = {}) => {
+    const updates = buildBatchUpdatesForFridge(fridgeId);
+    if (!updates.length) {
+      if (!silentOverlay) setToast({ type: 'ok', text: 'There are no changes to save.' });
       return;
     }
-
-    // Prepare updates with parts if present
-    const updates = changed.map((pName) => {
-      const partsArr = (fridgeParts?.[fridgeId]?.[pName] || []).map((line) => ({
-        label: String(line.label || ''),
-        quantity: toInt(line.qtyStr),
-      }));
-      const hasParts = partsArr.some((x) => Number.isFinite(x.quantity));
-      return {
-        productName: pName,
-        quantity: toInt(edits[pName]),
-        ...(hasParts ? { parts: partsArr } : {}),
-      };
-    });
 
     try {
       if (!silentOverlay) setSavingFridgeId(fridgeId);
 
-      // Row spinners
-      setRowSaving((prev) => ({
-        ...prev,
-        [fridgeId]: {
-          ...(prev[fridgeId] || {}),
-          ...Object.fromEntries(changed.map((p) => [p, true])),
-        },
-      }));
+      setRowSaving((prev) => {
+        const copy = { ...prev };
+        const flags = { ...(copy[fridgeId] || {}) };
+        updates.forEach((u) => (flags[u.productName] = true));
+        copy[fridgeId] = flags;
+        return copy;
+      });
 
       await API.put(
         `/locations/${locationId}/refrigerators/${fridgeId}/products/batch`,
@@ -610,112 +772,68 @@ function LocationPage() {
         { timeout: 15000 }
       );
 
-      if (silentOverlay) {
-        // Local reconcile without refetch
-        setLocationData((prev) => {
-          if (!prev) return prev;
-          const next = { ...prev };
-          next.refrigerators = (prev.refrigerators || []).map((fr) => {
-            if (String(fr._id) !== String(fridgeId)) return fr;
-            const copy = { ...fr, products: [...(fr.products || [])] };
-            copy.products = copy.products.map((p) => {
-              const u = updates.find((x) => x.productName === p.productName);
-              if (u) {
-                return {
-                  ...p,
-                  quantity: toInt(u.quantity),
-                  parts: Array.isArray(u.parts) ? u.parts : p.parts,
-                };
-              }
-              return p;
-            });
-            return copy;
+      // Reconcile local state (quantities + parts) using what we sent
+      setLocationData((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        next.refrigerators = (prev.refrigerators || []).map((fr) => {
+          if (String(fr._id) !== String(fridgeId)) return fr;
+          const copy = { ...fr, products: [...(fr.products || [])] };
+          copy.products = copy.products.map((p) => {
+            const sent = updates.find((u) => u.productName === p.productName);
+            if (!sent) return p;
+            return {
+              ...p,
+              quantity: Number(sent.quantity) || 0,
+              parts: Array.isArray(sent.parts) ? sent.parts : p.parts || [],
+            };
           });
-          return next;
-        });
-
-        // Edits + dirty reset for changed fields (only if value matches)
-        setFridgeEditsByMode((prevAll) => {
-          const byMode = { ...prevAll };
-          const modeMap = { ...(byMode[viewMode] || {}) };
-          const fr = { ...(modeMap[fridgeId] || {}) };
-          for (const pName of changed) {
-            const sent = String(toInt(edits[pName]));
-            const currentUI = String(fr[pName] ?? '');
-            if (currentUI === '' || currentUI === sent) {
-              fr[pName] = Number(sent) === 0 ? '' : sent;
-              setDirtyMapByMode((dmAll) => {
-                const dmCopy = { ...dmAll };
-                const dmMode = { ...(dmCopy[viewMode] || {}) };
-                dmMode[fridgeId] = { ...(dmMode[fridgeId] || {}), [pName]: false };
-                dmCopy[viewMode] = dmMode;
-                return dmCopy;
-              });
-            }
-          }
-          modeMap[fridgeId] = fr;
-          byMode[viewMode] = modeMap;
-          return byMode;
-        });
-      } else {
-        // Manual save: refetch (keeps other users' changes aligned)
-        const refetch = await API.get(`/locations/${locationId}`, { timeout: 15000 });
-        const fresh = refetch.data;
-        setLocationData(fresh);
-
-        // Sync parts state from backend
-        setFridgeParts((prev) => {
-          const next = { ...prev };
-          (fresh.refrigerators || []).forEach((fr) => {
-            const forFr = { ...(next[fr._id] || {}) };
-            fr.products.forEach((p) => {
-              const pParts = Array.isArray(p.parts) ? p.parts : [];
-              forFr[p.productName] = pParts.map((line, idx) => ({
-                id: `${fr._id}-${p.productName}-${idx}-${Date.now()}`,
-                label: String(line.label || ''),
-                qtyStr: String(line.quantity ?? 0),
-              }));
-            });
-            next[fr._id] = forFr;
-          });
-          return next;
-        });
-
-        // Realign ONLY active mode edits
-        setFridgeEditsByMode((prevAll) => {
-          const byMode = { ...prevAll };
-          const modeMap = { ...(byMode[viewMode] || {}) };
-
-          for (const fr of fresh.refrigerators || []) {
-            const frId = String(fr._id);
-            const frDirty = (dirtyMapByMode[viewMode] || {})[frId] || {};
-            const updated = { ...(modeMap[frId] || {}) };
-            fr.products.forEach((p) => {
-              if (!frDirty[p.productName]) {
-                if (viewMode === MODE_INITIAL) {
-                  updated[p.productName] = p.quantity === 0 ? '' : String(p.quantity);
-                } else {
-                  // final: leave as '' baseline if not dirty
-                  updated[p.productName] = updated[p.productName] ?? '';
-                }
-              }
-            });
-            modeMap[frId] = updated;
-          }
-          byMode[viewMode] = modeMap;
-          return byMode;
-        });
-
-        setDirtyMapByMode((prev) => {
-          const copy = { ...prev };
-          const dMode = { ...(copy[viewMode] || {}) };
-          const d = { ...(dMode[fridgeId] || {}) };
-          changed.forEach((p) => (d[p] = false));
-          dMode[fridgeId] = d;
-          copy[viewMode] = dMode;
           return copy;
         });
-      }
+        return next;
+      });
+
+      // Reflect back into edits maps (mode active)
+      setFridgeEditsByMode((prevAll) => {
+        const byMode = { ...prevAll };
+        const modeMap = { ...(byMode[viewMode] || {}) };
+        const fr = { ...(modeMap[fridgeId] || {}) };
+        updates.forEach((u) => {
+          const q = Number(u.quantity) || 0;
+          fr[u.productName] = q === 0 ? '' : String(q);
+        });
+        modeMap[fridgeId] = fr;
+        byMode[viewMode] = modeMap;
+        return byMode;
+      });
+
+      setPartsEditsByMode((prevAll) => {
+        const byMode = { ...prevAll };
+        const modeMap = { ...(byMode[viewMode] || {}) };
+        const fr = { ...(modeMap[fridgeId] || {}) };
+        updates.forEach((u) => {
+          if (Array.isArray(u.parts)) {
+            fr[u.productName] = u.parts.map((pp) => ({
+              label: String(pp.label || ''),
+              quantity: Number(pp.quantity) || 0,
+            }));
+          }
+        });
+        modeMap[fridgeId] = fr;
+        byMode[viewMode] = modeMap;
+        return byMode;
+      });
+
+      // Clear dirty flags for saved products
+      setDirtyMapByMode((prev) => {
+        const copy = { ...prev };
+        const dMode = { ...(copy[viewMode] || {}) };
+        const d = { ...(dMode[fridgeId] || {}) };
+        updates.forEach((u) => (d[u.productName] = false));
+        dMode[fridgeId] = d;
+        copy[viewMode] = dMode;
+        return copy;
+      });
 
       if (!silentOverlay) setToast({ type: 'ok', text: 'Changes saved.' });
     } catch (err) {
@@ -723,13 +841,10 @@ function LocationPage() {
       setToast({ type: 'error', text: 'Error saving changes.' });
     } finally {
       if (!silentOverlay) setSavingFridgeId(null);
-      // clear row spinners
       setRowSaving((prev) => {
         const copy = { ...prev };
         if (copy[fridgeId]) {
-          const cleared = {};
-          for (const k of Object.keys(copy[fridgeId])) cleared[k] = false;
-          copy[fridgeId] = cleared;
+          Object.keys(copy[fridgeId]).forEach((k) => (copy[fridgeId][k] = false));
         }
         return copy;
       });
@@ -749,7 +864,6 @@ function LocationPage() {
       await new Promise((r) => setTimeout(r, 120));
       if (Date.now() - started > 2500) break;
     }
-
     await doSaveFridge(fridge._id, { silentOverlay: false });
   };
 
@@ -761,7 +875,6 @@ function LocationPage() {
     });
   };
 
-  // Cleanup
   useEffect(() => {
     return () => {
       Object.values(debouncers.current).forEach((t) => t && clearTimeout(t));
@@ -773,7 +886,6 @@ function LocationPage() {
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  // Mode navigation (always visible)
   const goMode = (mode) => {
     const params = new URLSearchParams(window.location.search);
     params.set('mode', mode);
@@ -807,11 +919,8 @@ function LocationPage() {
       )}
 
       {/* Mode toggle */}
-      <div
-        className="card"
-        style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}
-      >
-        <strong>Inventory:</strong>
+      <div className="card" style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+        <strong>Inventory: </strong>
         <button
           className={`chip-radio ${viewMode === MODE_INITIAL ? 'active' : ''}`}
           onClick={() => goMode(MODE_INITIAL)}
@@ -821,7 +930,7 @@ function LocationPage() {
         <button
           className={`chip-radio ${viewMode === MODE_FINAL ? 'active' : ''}`}
           onClick={() => goMode(MODE_FINAL)}
-          title="In Final view, inputs start at 0"
+          title="In Final view, fields start at 0"
         >
           Final
         </button>
@@ -840,10 +949,9 @@ function LocationPage() {
       <h2>
         Location: {locationData.name}{' '}
         <small style={{ fontWeight: 400, opacity: 0.8 }}>
-          ({viewMode === MODE_FINAL ? 'Final Inventory' : 'Initial Inventory'})
+          ({viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory'})
         </small>
       </h2>
-
       {lastEdit && (
         <div
           className="pill"
@@ -855,16 +963,10 @@ function LocationPage() {
         </div>
       )}
 
-      {/* Inventory session bar */}
+      {/* Session controls */}
       <div
         className="card"
-        style={{
-          marginBottom: '0.75rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          flexWrap: 'wrap',
-        }}
+        style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
       >
         <strong style={{ marginRight: 8 }}>Session</strong>
         {!invActive ? (
@@ -886,20 +988,12 @@ function LocationPage() {
         )}
       </div>
 
-      {/* Final mode hint */}
       {viewMode === MODE_FINAL && (
-        <div
-          className="card"
-          style={{ borderColor: '#ef4444', background: '#fff1f2', marginBottom: 10 }}
-        >
-          <b>Final view:</b> Fields start at 0. Autosave will update the inventory with the values
-          you enter. When you close the session from this view, the final snapshot will use these
-          values.
+        <div className="card" style={{ borderColor: '#ef4444', background: '#fff1f2', marginBottom: 10 }}>
+          <b>Final view:</b> fields start at 0. Autosave updates inventory with the values you enter.
+          When you close from this view, the final snapshot will use these values.
         </div>
       )}
-
-      <p>Created By: {locationData.createdBy?.name}</p>
-      <p>Users assigned: {locationData.users?.length || 0}</p>
 
       {locationData.refrigerators?.length ? (
         <div className="fridge-stack">
@@ -908,6 +1002,8 @@ function LocationPage() {
             const thisRowSaving = rowSaving[fridge._id] || {};
             const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
             const frDirty = (dirtyMapByMode[viewMode] || {})[fridge._id] || {};
+            const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
+            const frExpanded = (expandedMap[fridge._id] || {});
 
             return (
               <section key={fridge._id} className="card fridge-card" aria-busy={disabled}>
@@ -924,7 +1020,7 @@ function LocationPage() {
 
                   <div className="fridge-actions">
                     {autoSave && (
-                      <span className="pill" title="Confirmed changes are auto-saved">
+                      <span className="pill" title="Confirmed changes are saved automatically">
                         Auto-save: <b>ON</b>
                       </span>
                     )}
@@ -952,15 +1048,13 @@ function LocationPage() {
                 <div className="table-wrap table-wrap--shadow" style={{ position: 'relative' }}>
                   <table className="table-excel" aria-describedby={`desc-${fridge._id}`}>
                     <caption id={`desc-${fridge._id}`} style={{ display: 'none' }}>
-                      Product table for fridge {fridge.name}
+                      Products table for fridge {fridge.name}
                     </caption>
                     <thead>
                       <tr>
-                        <th style={{ width: '40%' }}>Product</th>
-                        <th className="num" style={{ width: '20%' }}>Total</th>
-                        <th style={{ width: '40%' }} className="num">
-                          Parts (breakdown)
-                        </th>
+                        <th style={{ width: '42%' }}>Product</th>
+                        <th className="num" style={{ width: 130 }}>Quantity</th>
+                        <th className="num" style={{ width: 70 }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -973,37 +1067,23 @@ function LocationPage() {
                         })
                         .map((prod, index) => {
                           const refKey = `${fridge._id}-${index}`;
-                          const displayVal =
+                          const savingThisRow = !!thisRowSaving[prod.productName];
+
+                          // main display value: from edits (mode) or baseline
+                          const mainDisplay =
                             frEdits[prod.productName] ??
                             (viewMode === MODE_INITIAL ? String(prod.quantity) : '');
-                          const savingThisRow = !!thisRowSaving[prod.productName];
-                          const open = !!partsOpen?.[fridge._id]?.[prod.productName];
-                          const partsArr = fridgeParts?.[fridge._id]?.[prod.productName] || [];
 
-                          const totalFromParts = partsArr.reduce(
-                            (acc, l) => acc + toInt(l.qtyStr),
-                            0
-                          );
-                          const showPartsTotalHint =
-                            partsArr.length > 0 && toInt(displayVal) !== totalFromParts;
+                          const isExpanded = !!frExpanded[prod.productName];
+                          const curParts = frParts[prod.productName] || [];
+                          const sumParts = totalFromParts(curParts);
+                          const showSumBadge = curParts.length > 0;
 
                           return (
-                            <tr key={prod.productName}>
-                              <td>
-                                <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
-                                  <button
-                                    type="button"
-                                    className="btn btn--secondary"
-                                    onClick={() =>
-                                      toggleParts(fridge._id, prod.productName)
-                                    }
-                                    aria-expanded={open}
-                                    aria-controls={`parts-${fridge._id}-${index}`}
-                                    title={open ? 'Hide parts' : 'Show parts'}
-                                  >
-                                    {open ? '▾' : '▸'}
-                                  </button>
-                                  <span>{prod.productName}</span>
+                            <React.Fragment key={prod.productName}>
+                              <tr>
+                                <td>
+                                  {prod.productName}
                                   {(savingThisRow || frDirty[prod.productName]) && (
                                     <span
                                       aria-label={savingThisRow ? 'Saving…' : 'Editing…'}
@@ -1021,141 +1101,151 @@ function LocationPage() {
                                       }}
                                     />
                                   )}
-                                </div>
-                              </td>
-                              <td className="num">
-                                <NumberInput
-                                  ref={(el) => {
-                                    if (el) inputRefs.current[refKey] = el;
-                                  }}
-                                  value={displayVal}
-                                  onChange={(newVal) =>
-                                    handleQuantityChange(fridge._id, prod.productName, newVal)
-                                  }
-                                  onEnter={() => {
-                                    const nextKey = `${fridge._id}-${index + 1}`;
-                                    const nextEl = inputRefs.current[nextKey];
-                                    if (nextEl?.focus) nextEl.focus();
-                                  }}
-                                  aria-label={`Quantity of ${prod.productName}`}
-                                  inputMode={isMobile ? 'text' : 'decimal'}
-                                  autoComplete="off"
-                                  autoCorrect="off"
-                                  spellCheck={false}
-                                />
-                                {showPartsTotalHint && (
-                                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-                                    Parts sum: <b>{totalFromParts}</b>
-                                  </div>
-                                )}
-                              </td>
-                              <td>
-                                {/* Parts panel */}
-                                {open && (
-                                  <div
-                                    id={`parts-${fridge._id}-${index}`}
-                                    className="parts-panel"
-                                    style={{
-                                      display: 'grid',
-                                      gap: 8,
-                                      alignItems: 'center',
+                                  {showSumBadge && (
+                                    <small className="pill" style={{ marginLeft: 8 }}>
+                                      Sum: <b>{sumParts}</b>
+                                    </small>
+                                  )}
+                                </td>
+                                <td className="num">
+                                  <NumberInput
+                                    ref={(el) => {
+                                      if (el) inputRefs.current[refKey] = el;
                                     }}
+                                    value={mainDisplay}
+                                    onChange={(newVal) =>
+                                      handleQuantityChange(fridge._id, prod.productName, newVal)
+                                    }
+                                    onEnter={() => {
+                                      const nextKey = `${fridge._id}-${index + 1}`;
+                                      const nextEl = inputRefs.current[nextKey];
+                                      if (nextEl?.focus) nextEl.focus();
+                                    }}
+                                    aria-label={`Quantity of ${prod.productName}`}
+                                    inputMode={isMobile ? 'text' : 'decimal'}
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    spellCheck={false}
+                                  />
+                                </td>
+                                <td className="num" style={{ textAlign: 'right' }}>
+                                  <button
+                                    className="btn btn--secondary"
+                                    onClick={() =>
+                                      ensureExpanded(fridge._id, prod.productName, !isExpanded)
+                                    }
+                                    title={isExpanded ? 'Hide parts' : 'Show parts / Add part'}
                                   >
-                                    {(partsArr || []).length === 0 && (
-                                      <em style={{ opacity: 0.75 }}>
-                                        No parts yet. Add lines for shelves or sub-areas.
-                                      </em>
-                                    )}
+                                    {isExpanded ? '▾' : '▸'}
+                                  </button>
+                                </td>
+                              </tr>
 
-                                    {(partsArr || []).map((line) => (
+                              {isExpanded && (
+                                <tr>
+                                  <td colSpan={3} style={{ background: '#f8fafc' }}>
+                                    {/* Parts editor */}
+                                    <div
+                                      className="card"
+                                      style={{
+                                        marginTop: 6,
+                                        border: '1px dashed #cbd5e1',
+                                        background: '#ffffff',
+                                      }}
+                                    >
                                       <div
-                                        key={line.id}
                                         className="flex-row"
-                                        style={{ gap: 8, alignItems: 'center' }}
+                                        style={{ justifyContent: 'space-between', alignItems: 'center' }}
                                       >
-                                        <input
-                                          type="text"
-                                          value={line.label}
-                                          onChange={(e) =>
-                                            changePartField(
-                                              fridge._id,
-                                              prod.productName,
-                                              line.id,
-                                              'label',
-                                              e.target.value
-                                            )
-                                          }
-                                          placeholder="Label (e.g., top shelf)"
-                                          style={{ flex: 1, minWidth: 140 }}
-                                        />
-                                        <input
-                                          type="text"
-                                          value={line.qtyStr}
-                                          onChange={(e) =>
-                                            changePartField(
-                                              fridge._id,
-                                              prod.productName,
-                                              line.id,
-                                              'qtyStr',
-                                              e.target.value
-                                            )
-                                          }
-                                          onBlur={() => {
-                                            // Normalize blanks/non-numbers to 0
-                                            changePartField(
-                                              fridge._id,
-                                              prod.productName,
-                                              line.id,
-                                              'qtyStr',
-                                              String(toInt(line.qtyStr))
-                                            );
-                                            recomputeTotalFromParts(fridge._id, prod.productName);
-                                          }}
-                                          inputMode={isMobile ? 'text' : 'decimal'}
-                                          placeholder="0"
-                                          style={{ width: 90, textAlign: 'right' }}
-                                        />
+                                        <strong>Parts (shelves / groups)</strong>
                                         <button
-                                          type="button"
-                                          className="btn btn--danger"
-                                          onClick={() =>
-                                            removePartLine(
-                                              fridge._id,
-                                              prod.productName,
-                                              line.id
-                                            )
-                                          }
-                                          title="Remove line"
+                                          className="btn"
+                                          onClick={() => addPart(fridge._id, prod.productName)}
                                         >
-                                          ×
+                                          + Add part
                                         </button>
                                       </div>
-                                    ))}
 
-                                    <div className="flex-row" style={{ gap: 8 }}>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          addPartLine(fridge._id, prod.productName)
-                                        }
-                                      >
-                                        + Add part
-                                      </button>
-                                      <span className="push-right" />
-                                      <small style={{ opacity: 0.7 }}>
-                                        Total by parts:{' '}
-                                        <b>
-                                          {partsArr.reduce(
-                                            (acc, l) => acc + toInt(l.qtyStr),
-                                            0
-                                          )}
-                                        </b>
-                                      </small>
+                                      {curParts.length === 0 ? (
+                                        <p style={{ marginTop: 8, opacity: 0.7 }}>
+                                          No parts yet. Click “+ Add part” to split this product into sub-entries.
+                                        </p>
+                                      ) : (
+                                        <div className="table-wrap" style={{ marginTop: 8 }}>
+                                          <table className="table-excel table--dense" style={{ minWidth: 520 }}>
+                                            <thead>
+                                              <tr>
+                                                <th style={{ width: '60%' }}>Label</th>
+                                                <th className="num" style={{ width: 160 }}>Quantity</th>
+                                                <th className="num" style={{ width: 80 }}></th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {curParts.map((part, pidx) => (
+                                                <tr key={`${prod.productName}-part-${pidx}`}>
+                                                  <td>
+                                                    <input
+                                                      type="text"
+                                                      value={part.label}
+                                                      onChange={(e) =>
+                                                        updatePart(
+                                                          fridge._id,
+                                                          prod.productName,
+                                                          pidx,
+                                                          'label',
+                                                          e.target.value
+                                                        )
+                                                      }
+                                                      placeholder={pidx === 0 ? 'Primary (e.g., Top shelf)' : 'Part name'}
+                                                    />
+                                                  </td>
+                                                  <td className="num">
+                                                    <NumberInput
+                                                      value={String(part.quantity ?? '')}
+                                                      onChange={(v) =>
+                                                        updatePart(
+                                                          fridge._id,
+                                                          prod.productName,
+                                                          pidx,
+                                                          'quantity',
+                                                          v
+                                                        )
+                                                      }
+                                                      aria-label={`Quantity for ${part.label || `part ${pidx + 1}`}`}
+                                                      inputMode={isMobile ? 'text' : 'decimal'}
+                                                      autoComplete="off"
+                                                      autoCorrect="off"
+                                                      spellCheck={false}
+                                                    />
+                                                  </td>
+                                                  <td className="num" style={{ textAlign: 'right' }}>
+                                                    <button
+                                                      className="btn btn--danger"
+                                                      onClick={() =>
+                                                        removePartAt(fridge._id, prod.productName, pidx)
+                                                      }
+                                                      title="Remove this part"
+                                                    >
+                                                      ×
+                                                    </button>
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+
+                                      <div style={{ marginTop: 8, textAlign: 'right' }}>
+                                        <span className="pill">
+                                          Total = <b>{sumParts}</b>
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           );
                         })}
                     </tbody>
@@ -1168,9 +1258,7 @@ function LocationPage() {
                   </button>
                 </div>
 
-                {savingFridgeId === fridge._id && (
-                  <SavingOverlay label={`Saving "${fridge.name}"…`} />
-                )}
+                {savingFridgeId === fridge._id && <SavingOverlay label={`Saving "${fridge.name}"…`} />}
               </section>
             );
           })}
