@@ -20,6 +20,14 @@ function useQueryMode() {
   return MODE_INITIAL;
 }
 
+// Helper
+const isStableNumber = (s) => /^\s*\d+\s*$/.test(String(s ?? ''));
+const toInt = (s) => {
+  if (s === '' || s == null) return 0;
+  const n = parseInt(String(s).replace(/\D+/g, ''), 10);
+  return Number.isFinite(n) ? n : 0;
+};
+
 function LocationPage() {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -27,7 +35,7 @@ function LocationPage() {
   const role = useSelector((s) => s.auth.role);
   const viewMode = useQueryMode(); // 'initial' | 'final'
 
-  // Inventario (sesión)
+  // Inventory session
   const [invActive, setInvActive] = useState(null); // { _id, startedAt } | null
   const [invBusy, setInvBusy] = useState(false);
 
@@ -38,40 +46,43 @@ function LocationPage() {
   const [newFridgeName, setNewFridgeName] = useState('');
   const [standardOrder, setStandardOrder] = useState([]);
 
-  // Última edición (quién y cuándo)
+  // Last edit (who/when)
   const [lastEdit, setLastEdit] = useState(null); // { at: ISO, actorName: string|null, source?:string }
 
-  // Ediciones por modo:
-  // { initial: { [fridgeId]: { [productName]: "12" } }, final: { ... } }
-  const [fridgeEditsByMode, setFridgeEditsByMode] = useState({ [MODE_INITIAL]: {}, [MODE_FINAL]: {} });
+  // Edits by mode: { initial: { [fridgeId]: { [productName]: "12" } }, final: { ... } }
+  const [fridgeEditsByMode, setFridgeEditsByMode] = useState({
+    [MODE_INITIAL]: {},
+    [MODE_FINAL]: {},
+  });
+
+  // Persistent product parts UI state (mirrors backend parts)
+  // { [fridgeId]: { [productName]: [{ id, label, qtyStr }] } }
+  const [fridgeParts, setFridgeParts] = useState({});
+
+  // Toggle visibility per product parts panel
+  // { [fridgeId]: { [productName]: true|false } }
+  const [partsOpen, setPartsOpen] = useState({});
 
   // UI states
-  const [savingFridgeId, setSavingFridgeId] = useState(null); // overlay al guardar manual
+  const [savingFridgeId, setSavingFridgeId] = useState(null);
   const [toast, setToast] = useState(null); // { type:'ok'|'error', text:string }
   const [autoSave, setAutoSave] = useState(() => {
     const v = localStorage.getItem('autosave_fridges');
-    return v ? v === '1' : true; // por defecto ON
+    return v ? v === '1' : true;
   });
 
-  const isStableNumber = (s) => /^\s*\d+\s*$/.test(String(s ?? ''));
-
-  // refs globales para coalescer autosaves por nevera
-  const inFlight = useRef({});  // { [fridgeId]: true|false }
-  const pending  = useRef({});  // { [fridgeId]: true|false }
-
-  // Guardado por fila (spinner junto al input)
-  const [rowSaving, setRowSaving] = useState({}); // { [fridgeId]: { [productName]: boolean } }
-
-  // dirty map por modo (para no pisar campos que el usuario sigue editando)
-  const [dirtyMapByMode, setDirtyMapByMode] = useState({ [MODE_INITIAL]: {}, [MODE_FINAL]: {} });
-
-  // Timers de debounce por fridge
-  const debouncers = useRef({}); // { [fridgeId]: numberTimeoutId }
-
-  // refs para focus secuencial
+  // autosave coalescing
+  const inFlight = useRef({});
+  const pending = useRef({});
+  const [rowSaving, setRowSaving] = useState({});
+  const [dirtyMapByMode, setDirtyMapByMode] = useState({
+    [MODE_INITIAL]: {},
+    [MODE_FINAL]: {},
+  });
+  const debouncers = useRef({});
   const inputRefs = useRef({});
 
-  // ---- helpers ----
+  // Order helper
   const orderIndex = (name) => {
     const i = (standardOrder || []).findIndex(
       (s) => String(s).toLowerCase() === String(name).toLowerCase()
@@ -79,7 +90,7 @@ function LocationPage() {
     return i === -1 ? 9999 : i;
   };
 
-  // Baseline desde locationData para modo INITIAL
+  // Baseline from backend for initial
   const baselineInitial = useMemo(() => {
     const m = {};
     if (locationData?.refrigerators) {
@@ -94,14 +105,14 @@ function LocationPage() {
     return m;
   }, [locationData]);
 
-  // Baseline 0 para modo FINAL (todo vacío ≡ 0)
+  // Baseline zero for final
   const baselineFinal = useMemo(() => {
     const m = {};
     if (locationData?.refrigerators) {
       locationData.refrigerators.forEach((fr) => {
         const inner = {};
         fr.products.forEach((p) => {
-          inner[p.productName] = ''; // '' ≡ 0
+          inner[p.productName] = ''; // '' = 0
         });
         m[fr._id] = inner;
       });
@@ -110,12 +121,15 @@ function LocationPage() {
   }, [locationData]);
 
   const activeBaseline = viewMode === MODE_FINAL ? baselineFinal : baselineInitial;
+  const fridgeEdits = useMemo(
+    () => fridgeEditsByMode[viewMode] || {},
+    [fridgeEditsByMode, viewMode]
+  );
+  const thisDirtyMap = useMemo(
+    () => dirtyMapByMode[viewMode] || {},
+    [dirtyMapByMode, viewMode]
+  );
 
-  // Ediciones activas segun modo
-  const fridgeEdits = useMemo(() => fridgeEditsByMode[viewMode] || {}, [fridgeEditsByMode, viewMode]);
-  const thisDirtyMap = useMemo(() => dirtyMapByMode[viewMode] || {}, [dirtyMapByMode, viewMode]);
-
-  // ¿hay cambios sin guardar? (vs baseline de modo activo)
   const hasUnsaved = useMemo(() => {
     const frIds = Object.keys(fridgeEdits || {});
     for (const frId of frIds) {
@@ -129,7 +143,7 @@ function LocationPage() {
     return false;
   }, [fridgeEdits, activeBaseline]);
 
-  // Simplificado: solo flags visibles
+  // Keep visible only simple saving flags (avoid stuck overlays)
   const hasAnySaving =
     savingFridgeId != null ||
     Object.values(rowSaving).some((m) => Object.values(m || {}).some(Boolean));
@@ -145,7 +159,7 @@ function LocationPage() {
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [hasUnsaved, hasAnySaving]);
 
-  // ---- data fetch ----
+  // ---- Fetch ----
   useEffect(() => {
     if (!locationId) {
       setLoading(false);
@@ -154,29 +168,49 @@ function LocationPage() {
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await API.get(`/locations/${locationId}`, { signal: controller.signal, timeout: 15000 });
-        setLocationData(res.data);
-        setNewName(res.data?.name || '');
+        const res = await API.get(`/locations/${locationId}`, {
+          signal: controller.signal,
+          timeout: 15000,
+        });
+        const data = res.data;
+        setLocationData(data);
+        setNewName(data?.name || '');
 
-        // Inicializa edits por modo
+        // Initialize edits per mode
         const initInitial = {};
         const initFinal = {};
-        if (res.data?.refrigerators) {
-          res.data.refrigerators.forEach((fr) => {
-            const editsInitial = {};
-            const editsFinal = {};
+        const parts = {};
+
+        if (data?.refrigerators) {
+          data.refrigerators.forEach((fr) => {
+            const eInitial = {};
+            const eFinal = {};
+            const partsForFr = {};
+
             fr.products.forEach((p) => {
-              // initial: base backend
-              editsInitial[p.productName] = p.quantity === 0 ? '' : String(p.quantity);
-              // final: base cero
-              editsFinal[p.productName] = ''; // '' ≡ 0
+              // initial baseline from backend
+              eInitial[p.productName] = p.quantity === 0 ? '' : String(p.quantity);
+              // final baseline zero
+              eFinal[p.productName] = '';
+
+              // load parts from backend (persistent)
+              const pParts = Array.isArray(p.parts) ? p.parts : [];
+              partsForFr[p.productName] = pParts.map((line, idx) => ({
+                id: `${fr._id}-${p.productName}-${idx}-${Date.now()}`,
+                label: String(line.label || ''),
+                qtyStr: String(line.quantity ?? 0),
+              }));
             });
-            initInitial[fr._id] = editsInitial;
-            initFinal[fr._id] = editsFinal;
+
+            initInitial[fr._id] = eInitial;
+            initFinal[fr._id] = eFinal;
+            parts[fr._id] = partsForFr;
           });
         }
+
         setFridgeEditsByMode({ [MODE_INITIAL]: initInitial, [MODE_FINAL]: initFinal });
         setDirtyMapByMode({ [MODE_INITIAL]: {}, [MODE_FINAL]: {} });
+        setFridgeParts(parts);
       } catch (err) {
         if (err?.name !== 'CanceledError') {
           console.error('Error fetching location data:', err);
@@ -188,16 +222,23 @@ function LocationPage() {
     return () => controller.abort();
   }, [locationId, token]);
 
-  // Cargar "último editor" (opcional; si no existe la ruta, no muestra nada)
+  // Last edit (optional)
   useEffect(() => {
     if (!locationId) return;
     const ac = new AbortController();
     (async () => {
       try {
-        const r = await API.get(`/locations/${locationId}/last-edit`, { signal: ac.signal, timeout: 10000 });
+        const r = await API.get(`/locations/${locationId}/last-edit`, {
+          signal: ac.signal,
+          timeout: 10000,
+        });
         const data = r.data?.data;
         if (data?.at) {
-          setLastEdit({ at: data.at, actorName: data.actorName || null, source: data.source || null });
+          setLastEdit({
+            at: data.at,
+            actorName: data.actorName || null,
+            source: data.source || null,
+          });
         } else {
           setLastEdit(null);
         }
@@ -221,8 +262,7 @@ function LocationPage() {
     })();
   }, [token]);
 
-  // ======== INVENTARIO: Sesión activa (solo iniciar/cerrar) ========
-
+  // ===== Inventory sessions =====
   async function fetchActiveInv() {
     try {
       const r = await API.get(`/locations/inventory-sessions/active`, {
@@ -241,14 +281,14 @@ function LocationPage() {
     fetchActiveInv();
   }, [locationId]);
 
-  // Construye snapshot FINAL desde ediciones del modo ACTIVO
   function buildFinalSnapshotFromActiveEdits() {
     const out = [];
-    for (const fr of (locationData?.refrigerators || [])) {
+    for (const fr of locationData?.refrigerators || []) {
       const editsForFr = (fridgeEditsByMode[viewMode] || {})[fr._id] || {};
       const products = (fr.products || []).map((p) => {
         const raw = editsForFr[p.productName];
-        const q = raw === '' || raw == null ? 0 : parseInt(String(raw).replace(/\D+/g, ''), 10) || 0;
+        const q =
+          raw === '' || raw == null ? 0 : parseInt(String(raw).replace(/\D+/g, ''), 10) || 0;
         return { productName: p.productName, quantity: q };
       });
       out.push({ fridgeId: fr._id, products });
@@ -258,26 +298,24 @@ function LocationPage() {
 
   async function handleStartInventory() {
     if (invBusy) return;
-    // No bloqueamos por unsaved; el staff puede empezar sesión y seguir editando
     setInvBusy(true);
     try {
       await API.post(`/locations/inventory-sessions/start`, { locationId }, { timeout: 15000 });
       await fetchActiveInv();
-      setToast({ type: 'ok', text: 'Sesión de inventario inicial iniciada.' });
+      setToast({ type: 'ok', text: 'Initial inventory session started.' });
     } catch (e) {
       console.error(e);
-      const msg = e?.response?.data?.message || 'No se pudo iniciar la sesión.';
+      const msg = e?.response?.data?.message || 'Could not start the session.';
       setToast({ type: 'error', text: msg });
     } finally {
       setInvBusy(false);
     }
   }
 
-  // Cerrar con snapshot del modo ACTIVO (si estás en Final, será con base 0 + lo escrito)
   async function handleCloseWithFinal() {
     if (invBusy || !invActive?._id) return;
     const ok = window.confirm(
-      `Se cerrará la sesión con los valores de la vista "${viewMode === MODE_FINAL ? 'Final' : 'Inicial'}". ¿Confirmas?`
+      `The session will be closed using the values from the "${viewMode === MODE_FINAL ? 'Final' : 'Initial'}" view. Confirm?`
     );
     if (!ok) return;
 
@@ -287,60 +325,67 @@ function LocationPage() {
       const res = await API.patch(
         `/locations/inventory-sessions/${invActive._id}/final`,
         { finalSnapshot },
-        { timeout: 20000 },
+        { timeout: 20000 }
       );
       const closedSessionId = res?.data?.session?._id;
       if (closedSessionId) {
         rememberClosedSession(locationId, closedSessionId);
       }
       await fetchActiveInv();
-      setToast({ type: 'ok', text: 'Inventario final registrado y sesión cerrada.' });
+      setToast({ type: 'ok', text: 'Final inventory recorded and session closed.' });
     } catch (e) {
       console.error(e);
-      const msg = e?.response?.data?.message || 'No se pudo cerrar la sesión.';
+      const msg = e?.response?.data?.message || 'Could not close the session.';
       setToast({ type: 'error', text: msg });
     } finally {
       setInvBusy(false);
     }
   }
 
-  // ---- acciones admin ----
+  // --- Admin actions ---
   const handleRenameLocation = async () => {
     if (role !== 'admin' && role !== 'superuser') return;
-    if (!newName.trim()) return alert('El nombre no puede estar vacío.');
+    if (!newName.trim()) return alert('Name cannot be empty.');
     try {
       const res = await API.put(`/locations/${locationId}`, { name: newName }, { timeout: 12000 });
       setLocationData((prev) => ({ ...prev, name: newName }));
-      setToast({ type: 'ok', text: res.data.message || 'Locación renombrada.' });
+      setToast({ type: 'ok', text: res.data.message || 'Location renamed.' });
     } catch {
-      setToast({ type: 'error', text: 'Error al renombrar la locación.' });
+      setToast({ type: 'error', text: 'Error renaming location.' });
     }
   };
 
   const handleDeleteLocation = async () => {
     if (role !== 'admin' && role !== 'superuser') return;
-    const confirmed = window.confirm('¿Seguro que deseas eliminar esta locación?');
+    const confirmed = window.confirm('Are you sure you want to delete this location?');
     if (!confirmed) return;
     try {
       await API.delete(`/locations/${locationId}`, { timeout: 12000 });
-      setToast({ type: 'ok', text: 'Locación eliminada.' });
+      setToast({ type: 'ok', text: 'Location deleted.' });
       navigate('/home');
     } catch {
-      setToast({ type: 'error', text: 'Error al eliminar la locación.' });
+      setToast({ type: 'error', text: 'Error deleting location.' });
     }
   };
 
   const handleCreateFridge = async () => {
     if (role !== 'admin' && role !== 'superuser') return;
-    if (!newFridgeName.trim()) return alert('Nombre del refrigerador es requerido.');
+    if (!newFridgeName.trim()) return alert('Fridge name is required.');
     try {
-      const res = await API.post(`/locations/${locationId}/refrigerators`, { name: newFridgeName }, { timeout: 12000 });
+      const res = await API.post(
+        `/locations/${locationId}/refrigerators`,
+        { name: newFridgeName },
+        { timeout: 12000 }
+      );
       const refetch = await API.get(`/locations/${locationId}`, { timeout: 12000 });
       setLocationData(refetch.data);
       setNewFridgeName('');
-      setToast({ type: 'ok', text: res.data.message || 'Refrigerador creado.' });
+      setToast({ type: 'ok', text: res.data.message || 'Fridge created.' });
     } catch (err) {
-      setToast({ type: 'error', text: err?.response?.data?.message || 'Error al crear el refrigerador.' });
+      setToast({
+        type: 'error',
+        text: err?.response?.data?.message || 'Error creating fridge.',
+      });
     }
   };
 
@@ -348,7 +393,11 @@ function LocationPage() {
     const n = prompt('Enter new fridge name', fridge.name);
     if (!n) return;
     try {
-      const res = await API.put(`/locations/${locationId}/refrigerators/${fridge._id}`, { newName: n }, { timeout: 12000 });
+      const res = await API.put(
+        `/locations/${locationId}/refrigerators/${fridge._id}`,
+        { newName: n },
+        { timeout: 12000 }
+      );
       const refetch = await API.get(`/locations/${locationId}`, { timeout: 12000 });
       setLocationData(refetch.data);
       setToast({ type: 'ok', text: res.data.message || 'Fridge renamed.' });
@@ -369,10 +418,92 @@ function LocationPage() {
     }
   };
 
-  // ---- edición y autosave con debounce ----
+  // ===== Parts panel handlers =====
+  const toggleParts = (fridgeId, productName) => {
+    setPartsOpen((prev) => ({
+      ...prev,
+      [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: !prev?.[fridgeId]?.[productName] },
+    }));
+  };
+
+  const addPartLine = (fridgeId, productName) => {
+    setPartsOpen((prev) => ({
+      ...prev,
+      [fridgeId]: { ...(prev[fridgeId] || {}), [productName]: true },
+    }));
+    setFridgeParts((prev) => {
+      const fr = { ...(prev[fridgeId] || {}) };
+      const arr = [...(fr[productName] || [])];
+      arr.push({
+        id: `${fridgeId}-${productName}-${Date.now()}`,
+        label: '',
+        qtyStr: '0',
+      });
+      fr[productName] = arr;
+      return { ...prev, [fridgeId]: fr };
+    });
+    // Trigger autosave debounce on the fridge (sum will change when user edits)
+  };
+
+  const removePartLine = (fridgeId, productName, id) => {
+    setFridgeParts((prev) => {
+      const fr = { ...(prev[fridgeId] || {}) };
+      const arr = (fr[productName] || []).filter((x) => x.id !== id);
+      fr[productName] = arr;
+      return { ...prev, [fridgeId]: fr };
+    });
+    // After removing, recompute total and update edits
+    recomputeTotalFromParts(fridgeId, productName);
+    queueAutoSave(fridgeId);
+  };
+
+  const changePartField = (fridgeId, productName, id, field, value) => {
+    setFridgeParts((prev) => {
+      const fr = { ...(prev[fridgeId] || {}) };
+      const arr = [...(fr[productName] || [])];
+      const idx = arr.findIndex((x) => x.id === id);
+      if (idx !== -1) {
+        arr[idx] = { ...arr[idx], [field]: value };
+      }
+      fr[productName] = arr;
+      return { ...prev, [fridgeId]: fr };
+    });
+
+    if (field === 'qtyStr' && isStableNumber(value)) {
+      // Update total immediately
+      recomputeTotalFromParts(fridgeId, productName);
+      queueAutoSave(fridgeId);
+    }
+  };
+
+  const recomputeTotalFromParts = (fridgeId, productName) => {
+    const arr = (fridgeParts?.[fridgeId]?.[productName] || []);
+    const sum = arr.reduce((acc, l) => acc + toInt(l.qtyStr), 0);
+    // Update active mode edit total
+    setFridgeEditsByMode((prev) => {
+      const copy = { ...prev };
+      const modeMap = { ...(copy[viewMode] || {}) };
+      const fr = { ...(modeMap[fridgeId] || {}) };
+      fr[productName] = sum === 0 ? '' : String(sum);
+      modeMap[fridgeId] = fr;
+      copy[viewMode] = modeMap;
+      return copy;
+    });
+    // Mark dirty
+    setDirtyMapByMode((prev) => {
+      const copy = { ...prev };
+      const dmMode = { ...(copy[viewMode] || {}) };
+      const dmFr = { ...(dmMode[fridgeId] || {}) };
+      dmFr[productName] = true;
+      dmMode[fridgeId] = dmFr;
+      copy[viewMode] = dmMode;
+      return copy;
+    });
+  };
+
+  // ===== Autosave =====
   const queueAutoSave = (fridgeId, delay = 800) => {
     if (!autoSave) return;
-
     if (debouncers.current[fridgeId]) {
       clearTimeout(debouncers.current[fridgeId]);
       debouncers.current[fridgeId] = null;
@@ -384,7 +515,6 @@ function LocationPage() {
         pending.current[fridgeId] = true;
         return;
       }
-
       inFlight.current[fridgeId] = true;
       try {
         await doSaveFridge(fridgeId, { silentOverlay: true });
@@ -410,6 +540,7 @@ function LocationPage() {
       return copy;
     });
   };
+
   const updateDirtyMap = (mode, fn) => {
     setDirtyMapByMode((prev) => {
       const copy = { ...prev };
@@ -433,27 +564,38 @@ function LocationPage() {
     }
   };
 
-  // guardado real (usado por autosave y por botón)
+  // ===== Save (manual + autosave) =====
   const doSaveFridge = async (fridgeId, { silentOverlay = false } = {}) => {
     const edits = (fridgeEditsByMode[viewMode] || {})[fridgeId] || {};
-    const currentBase = (viewMode === MODE_FINAL ? baselineFinal : baselineInitial)[fridgeId] || {};
+    const currentBase =
+      (viewMode === MODE_FINAL ? baselineFinal : baselineInitial)[fridgeId] || {};
     const changed = Object.keys(edits).filter(
       (p) => String(edits[p] ?? '') !== String(currentBase[p] ?? '')
     );
 
     if (changed.length === 0) {
-      if (!silentOverlay) setToast({ type: 'ok', text: 'No hay cambios que guardar.' });
+      if (!silentOverlay) setToast({ type: 'ok', text: 'No changes to save.' });
       return;
     }
 
-    const payloadMap = new Map(
-      changed.map((pName) => [pName, parseInt(edits[pName] || '0', 10)])
-    );
+    // Prepare updates with parts if present
+    const updates = changed.map((pName) => {
+      const partsArr = (fridgeParts?.[fridgeId]?.[pName] || []).map((line) => ({
+        label: String(line.label || ''),
+        quantity: toInt(line.qtyStr),
+      }));
+      const hasParts = partsArr.some((x) => Number.isFinite(x.quantity));
+      return {
+        productName: pName,
+        quantity: toInt(edits[pName]),
+        ...(hasParts ? { parts: partsArr } : {}),
+      };
+    });
 
     try {
       if (!silentOverlay) setSavingFridgeId(fridgeId);
 
-      // spinners por fila
+      // Row spinners
       setRowSaving((prev) => ({
         ...prev,
         [fridgeId]: {
@@ -462,20 +604,14 @@ function LocationPage() {
         },
       }));
 
-      // ✅ UN SOLO REQUEST (batch)
       await API.put(
         `/locations/${locationId}/refrigerators/${fridgeId}/products/batch`,
-        {
-          updates: changed.map((pName) => ({
-            productName: pName,
-            quantity: payloadMap.get(pName) || 0,
-          })),
-        },
-        { timeout: 12000 }
+        { updates },
+        { timeout: 15000 }
       );
 
       if (silentOverlay) {
-        // 🔁 AUTOSAVE: reconciliar localmente sin refetch
+        // Local reconcile without refetch
         setLocationData((prev) => {
           if (!prev) return prev;
           const next = { ...prev };
@@ -483,8 +619,13 @@ function LocationPage() {
             if (String(fr._id) !== String(fridgeId)) return fr;
             const copy = { ...fr, products: [...(fr.products || [])] };
             copy.products = copy.products.map((p) => {
-              if (payloadMap.has(p.productName)) {
-                return { ...p, quantity: payloadMap.get(p.productName) };
+              const u = updates.find((x) => x.productName === p.productName);
+              if (u) {
+                return {
+                  ...p,
+                  quantity: toInt(u.quantity),
+                  parts: Array.isArray(u.parts) ? u.parts : p.parts,
+                };
               }
               return p;
             });
@@ -493,13 +634,13 @@ function LocationPage() {
           return next;
         });
 
-        // Reconcilia edits del modo activo sin pisar lo que el usuario sigue editando
+        // Edits + dirty reset for changed fields (only if value matches)
         setFridgeEditsByMode((prevAll) => {
           const byMode = { ...prevAll };
           const modeMap = { ...(byMode[viewMode] || {}) };
           const fr = { ...(modeMap[fridgeId] || {}) };
           for (const pName of changed) {
-            const sent = String(payloadMap.get(pName) || 0);
+            const sent = String(toInt(edits[pName]));
             const currentUI = String(fr[pName] ?? '');
             if (currentUI === '' || currentUI === sent) {
               fr[pName] = Number(sent) === 0 ? '' : sent;
@@ -517,28 +658,44 @@ function LocationPage() {
           return byMode;
         });
       } else {
-        // 🧾 MANUAL: refetch y realinea (manteniendo campos dirty del modo activo)
+        // Manual save: refetch (keeps other users' changes aligned)
         const refetch = await API.get(`/locations/${locationId}`, { timeout: 15000 });
         const fresh = refetch.data;
         setLocationData(fresh);
 
-        // Realineamos SOLO el modo activo
+        // Sync parts state from backend
+        setFridgeParts((prev) => {
+          const next = { ...prev };
+          (fresh.refrigerators || []).forEach((fr) => {
+            const forFr = { ...(next[fr._id] || {}) };
+            fr.products.forEach((p) => {
+              const pParts = Array.isArray(p.parts) ? p.parts : [];
+              forFr[p.productName] = pParts.map((line, idx) => ({
+                id: `${fr._id}-${p.productName}-${idx}-${Date.now()}`,
+                label: String(line.label || ''),
+                qtyStr: String(line.quantity ?? 0),
+              }));
+            });
+            next[fr._id] = forFr;
+          });
+          return next;
+        });
+
+        // Realign ONLY active mode edits
         setFridgeEditsByMode((prevAll) => {
           const byMode = { ...prevAll };
           const modeMap = { ...(byMode[viewMode] || {}) };
 
-          for (const fr of (fresh.refrigerators || [])) {
+          for (const fr of fresh.refrigerators || []) {
             const frId = String(fr._id);
             const frDirty = (dirtyMapByMode[viewMode] || {})[frId] || {};
             const updated = { ...(modeMap[frId] || {}) };
             fr.products.forEach((p) => {
               if (!frDirty[p.productName]) {
-                // En INITIAL, reflejamos lo que vino del backend
-                // En FINAL, seguimos dejando '' como base si no está dirty
                 if (viewMode === MODE_INITIAL) {
                   updated[p.productName] = p.quantity === 0 ? '' : String(p.quantity);
                 } else {
-                  // modo final: si no estaba editado, mantener vacío (0)
+                  // final: leave as '' baseline if not dirty
                   updated[p.productName] = updated[p.productName] ?? '';
                 }
               }
@@ -560,14 +717,13 @@ function LocationPage() {
         });
       }
 
-      if (!silentOverlay) setToast({ type: 'ok', text: 'Cambios guardados.' });
+      if (!silentOverlay) setToast({ type: 'ok', text: 'Changes saved.' });
     } catch (err) {
       console.error(err);
-      setToast({ type: 'error', text: 'Error al guardar cambios.' });
+      setToast({ type: 'error', text: 'Error saving changes.' });
     } finally {
       if (!silentOverlay) setSavingFridgeId(null);
-
-      // Limpia TODOS los spinners por fila de esa nevera
+      // clear row spinners
       setRowSaving((prev) => {
         const copy = { ...prev };
         if (copy[fridgeId]) {
@@ -581,16 +737,12 @@ function LocationPage() {
   };
 
   const handleSaveFridge = async (fridge) => {
-    // 1) Cancela cualquier debounce pendiente (evita que se dispare justo al guardar)
     if (debouncers.current[fridge._id]) {
       clearTimeout(debouncers.current[fridge._id]);
       debouncers.current[fridge._id] = null;
     }
-
-    // 2) Cancela "pendiente" de autosave para esta nevera
     pending.current[fridge._id] = false;
 
-    // 3) Espera un máximo si hay autosave en vuelo
     const started = Date.now();
     while (inFlight.current[fridge._id]) {
       // eslint-disable-next-line no-await-in-loop
@@ -598,7 +750,6 @@ function LocationPage() {
       if (Date.now() - started > 2500) break;
     }
 
-    // 4) Guarda en modo manual (overlay visible)
     await doSaveFridge(fridge._id, { silentOverlay: false });
   };
 
@@ -610,7 +761,7 @@ function LocationPage() {
     });
   };
 
-  // Limpieza total en unmount: timers y flags
+  // Cleanup
   useEffect(() => {
     return () => {
       Object.values(debouncers.current).forEach((t) => t && clearTimeout(t));
@@ -622,7 +773,7 @@ function LocationPage() {
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  // Navegación entre modos (siempre visible)
+  // Mode navigation (always visible)
   const goMode = (mode) => {
     const params = new URLSearchParams(window.location.search);
     params.set('mode', mode);
@@ -651,23 +802,26 @@ function LocationPage() {
             fontWeight: 600,
           }}
         >
-          {hasAnySaving ? 'Guardando cambios…' : 'Tienes cambios sin guardar.'}
+          {hasAnySaving ? 'Saving changes…' : 'You have unsaved changes.'}
         </div>
       )}
 
-      {/* Toggle de modos: SIEMPRE visible */}
-      <div className="card" style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-        <strong>Inventario:</strong>
+      {/* Mode toggle */}
+      <div
+        className="card"
+        style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}
+      >
+        <strong>Inventory:</strong>
         <button
           className={`chip-radio ${viewMode === MODE_INITIAL ? 'active' : ''}`}
           onClick={() => goMode(MODE_INITIAL)}
         >
-          Inicial
+          Initial
         </button>
         <button
           className={`chip-radio ${viewMode === MODE_FINAL ? 'active' : ''}`}
           onClick={() => goMode(MODE_FINAL)}
-          title="En Final, los campos inician en 0"
+          title="In Final view, inputs start at 0"
         >
           Final
         </button>
@@ -679,50 +833,73 @@ function LocationPage() {
             onChange={toggleAutosave}
             style={{ marginRight: 8 }}
           />
-          Auto-guardado por refrigerador
+          Auto-save by fridge
         </label>
       </div>
 
       <h2>
         Location: {locationData.name}{' '}
         <small style={{ fontWeight: 400, opacity: 0.8 }}>
-          ({viewMode === MODE_FINAL ? 'Inventario Final' : 'Inventario Inicial'})
+          ({viewMode === MODE_FINAL ? 'Final Inventory' : 'Initial Inventory'})
         </small>
       </h2>
+
       {lastEdit && (
-        <div className="pill" title={lastEdit.source ? `Fuente: ${lastEdit.source}` : undefined} style={{ margin: '6px 0 12px' }}>
-          Última edición: <b>{lastEdit.actorName || '—'}</b>
-          <span style={{ opacity: .8 }}> · {new Date(lastEdit.at).toLocaleString()}</span>
+        <div
+          className="pill"
+          title={lastEdit.source ? `Source: ${lastEdit.source}` : undefined}
+          style={{ margin: '6px 0 12px' }}
+        >
+          Last edit: <b>{lastEdit.actorName || '—'}</b>
+          <span style={{ opacity: 0.8 }}> · {new Date(lastEdit.at).toLocaleString()}</span>
         </div>
       )}
 
-      {/* Inventario (sesión) */}
-      <div className="card" style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <strong style={{ marginRight: 8 }}>Sesión</strong>
+      {/* Inventory session bar */}
+      <div
+        className="card"
+        style={{
+          marginBottom: '0.75rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <strong style={{ marginRight: 8 }}>Session</strong>
         {!invActive ? (
           <button onClick={handleStartInventory} disabled={invBusy}>
-            {invBusy ? 'Iniciando…' : 'Iniciar sesión'}
+            {invBusy ? 'Starting…' : 'Start session'}
           </button>
         ) : (
           <>
             <span className="pill">
-              Activa desde:&nbsp;
+              Active since:&nbsp;
               <b>{new Date(invActive.startedAt || Date.now()).toLocaleString()}</b>
             </span>
             <button onClick={handleCloseWithFinal} disabled={invBusy}>
-              {invBusy ? 'Cerrando…' : `Cerrar con ${viewMode === MODE_FINAL ? 'FINAL (vista Final)' : 'FINAL (vista Inicial)'}`}
+              {invBusy
+                ? 'Closing…'
+                : `Close with ${viewMode === MODE_FINAL ? 'FINAL (Final view)' : 'FINAL (Initial view)'}`}
             </button>
           </>
         )}
       </div>
 
-      {/* Nota modo Final */}
+      {/* Final mode hint */}
       {viewMode === MODE_FINAL && (
-        <div className="card" style={{ borderColor: '#ef4444', background: '#fff1f2', marginBottom: 10 }}>
-          <b>Vista Final:</b> los campos inician en 0. El autosave actualizará el inventario con los valores que ingreses.
-          Al cerrar la sesión desde esta vista, se enviará el snapshot final con estos valores.
+        <div
+          className="card"
+          style={{ borderColor: '#ef4444', background: '#fff1f2', marginBottom: 10 }}
+        >
+          <b>Final view:</b> Fields start at 0. Autosave will update the inventory with the values
+          you enter. When you close the session from this view, the final snapshot will use these
+          values.
         </div>
       )}
+
+      <p>Created By: {locationData.createdBy?.name}</p>
+      <p>Users assigned: {locationData.users?.length || 0}</p>
 
       {locationData.refrigerators?.length ? (
         <div className="fridge-stack">
@@ -747,8 +924,8 @@ function LocationPage() {
 
                   <div className="fridge-actions">
                     {autoSave && (
-                      <span className="pill" title="Los cambios confirmados se guardan solos">
-                        Auto-guardado: <b>ON</b>
+                      <span className="pill" title="Confirmed changes are auto-saved">
+                        Auto-save: <b>ON</b>
                       </span>
                     )}
                     {(role === 'admin' || role === 'superuser') && (
@@ -775,12 +952,15 @@ function LocationPage() {
                 <div className="table-wrap table-wrap--shadow" style={{ position: 'relative' }}>
                   <table className="table-excel" aria-describedby={`desc-${fridge._id}`}>
                     <caption id={`desc-${fridge._id}`} style={{ display: 'none' }}>
-                      Tabla de productos del refrigerador {fridge.name}
+                      Product table for fridge {fridge.name}
                     </caption>
                     <thead>
                       <tr>
-                        <th>Producto</th>
-                        <th className="num">Cantidad</th>
+                        <th style={{ width: '40%' }}>Product</th>
+                        <th className="num" style={{ width: '20%' }}>Total</th>
+                        <th style={{ width: '40%' }} className="num">
+                          Parts (breakdown)
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -793,36 +973,55 @@ function LocationPage() {
                         })
                         .map((prod, index) => {
                           const refKey = `${fridge._id}-${index}`;
-                          // Valor a mostrar: por modo
                           const displayVal =
                             frEdits[prod.productName] ??
-                            (viewMode === MODE_INITIAL
-                              ? String(prod.quantity) // initial: refleja backend
-                              : '' // final: base 0
-                            );
+                            (viewMode === MODE_INITIAL ? String(prod.quantity) : '');
                           const savingThisRow = !!thisRowSaving[prod.productName];
+                          const open = !!partsOpen?.[fridge._id]?.[prod.productName];
+                          const partsArr = fridgeParts?.[fridge._id]?.[prod.productName] || [];
+
+                          const totalFromParts = partsArr.reduce(
+                            (acc, l) => acc + toInt(l.qtyStr),
+                            0
+                          );
+                          const showPartsTotalHint =
+                            partsArr.length > 0 && toInt(displayVal) !== totalFromParts;
 
                           return (
                             <tr key={prod.productName}>
                               <td>
-                                {prod.productName}
-                                {(savingThisRow || frDirty[prod.productName]) && (
-                                  <span
-                                    aria-label={savingThisRow ? 'Guardando…' : 'Editando…'}
-                                    title={savingThisRow ? 'Guardando…' : 'Editando…'}
-                                    style={{
-                                      display: 'inline-block',
-                                      width: 12,
-                                      height: 12,
-                                      marginLeft: 8,
-                                      verticalAlign: 'middle',
-                                      borderRadius: '50%',
-                                      border: '2px solid rgba(37,99,235,.25)',
-                                      borderTopColor: '#2563eb',
-                                      animation: 'hawking-spin 800ms linear infinite',
-                                    }}
-                                  />
-                                )}
+                                <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn--secondary"
+                                    onClick={() =>
+                                      toggleParts(fridge._id, prod.productName)
+                                    }
+                                    aria-expanded={open}
+                                    aria-controls={`parts-${fridge._id}-${index}`}
+                                    title={open ? 'Hide parts' : 'Show parts'}
+                                  >
+                                    {open ? '▾' : '▸'}
+                                  </button>
+                                  <span>{prod.productName}</span>
+                                  {(savingThisRow || frDirty[prod.productName]) && (
+                                    <span
+                                      aria-label={savingThisRow ? 'Saving…' : 'Editing…'}
+                                      title={savingThisRow ? 'Saving…' : 'Editing…'}
+                                      style={{
+                                        display: 'inline-block',
+                                        width: 12,
+                                        height: 12,
+                                        marginLeft: 8,
+                                        verticalAlign: 'middle',
+                                        borderRadius: '50%',
+                                        border: '2px solid rgba(37,99,235,.25)',
+                                        borderTopColor: '#2563eb',
+                                        animation: 'hawking-spin 800ms linear infinite',
+                                      }}
+                                    />
+                                  )}
+                                </div>
                               </td>
                               <td className="num">
                                 <NumberInput
@@ -838,12 +1037,123 @@ function LocationPage() {
                                     const nextEl = inputRefs.current[nextKey];
                                     if (nextEl?.focus) nextEl.focus();
                                   }}
-                                  aria-label={`Cantidad de ${prod.productName}`}
+                                  aria-label={`Quantity of ${prod.productName}`}
                                   inputMode={isMobile ? 'text' : 'decimal'}
                                   autoComplete="off"
                                   autoCorrect="off"
                                   spellCheck={false}
                                 />
+                                {showPartsTotalHint && (
+                                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                                    Parts sum: <b>{totalFromParts}</b>
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                {/* Parts panel */}
+                                {open && (
+                                  <div
+                                    id={`parts-${fridge._id}-${index}`}
+                                    className="parts-panel"
+                                    style={{
+                                      display: 'grid',
+                                      gap: 8,
+                                      alignItems: 'center',
+                                    }}
+                                  >
+                                    {(partsArr || []).length === 0 && (
+                                      <em style={{ opacity: 0.75 }}>
+                                        No parts yet. Add lines for shelves or sub-areas.
+                                      </em>
+                                    )}
+
+                                    {(partsArr || []).map((line) => (
+                                      <div
+                                        key={line.id}
+                                        className="flex-row"
+                                        style={{ gap: 8, alignItems: 'center' }}
+                                      >
+                                        <input
+                                          type="text"
+                                          value={line.label}
+                                          onChange={(e) =>
+                                            changePartField(
+                                              fridge._id,
+                                              prod.productName,
+                                              line.id,
+                                              'label',
+                                              e.target.value
+                                            )
+                                          }
+                                          placeholder="Label (e.g., top shelf)"
+                                          style={{ flex: 1, minWidth: 140 }}
+                                        />
+                                        <input
+                                          type="text"
+                                          value={line.qtyStr}
+                                          onChange={(e) =>
+                                            changePartField(
+                                              fridge._id,
+                                              prod.productName,
+                                              line.id,
+                                              'qtyStr',
+                                              e.target.value
+                                            )
+                                          }
+                                          onBlur={() => {
+                                            // Normalize blanks/non-numbers to 0
+                                            changePartField(
+                                              fridge._id,
+                                              prod.productName,
+                                              line.id,
+                                              'qtyStr',
+                                              String(toInt(line.qtyStr))
+                                            );
+                                            recomputeTotalFromParts(fridge._id, prod.productName);
+                                          }}
+                                          inputMode={isMobile ? 'text' : 'decimal'}
+                                          placeholder="0"
+                                          style={{ width: 90, textAlign: 'right' }}
+                                        />
+                                        <button
+                                          type="button"
+                                          className="btn btn--danger"
+                                          onClick={() =>
+                                            removePartLine(
+                                              fridge._id,
+                                              prod.productName,
+                                              line.id
+                                            )
+                                          }
+                                          title="Remove line"
+                                        >
+                                          ×
+                                        </button>
+                                      </div>
+                                    ))}
+
+                                    <div className="flex-row" style={{ gap: 8 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          addPartLine(fridge._id, prod.productName)
+                                        }
+                                      >
+                                        + Add part
+                                      </button>
+                                      <span className="push-right" />
+                                      <small style={{ opacity: 0.7 }}>
+                                        Total by parts:{' '}
+                                        <b>
+                                          {partsArr.reduce(
+                                            (acc, l) => acc + toInt(l.qtyStr),
+                                            0
+                                          )}
+                                        </b>
+                                      </small>
+                                    </div>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );
@@ -854,12 +1164,13 @@ function LocationPage() {
 
                 <div className="fridge-foot">
                   <button onClick={() => handleSaveFridge(fridge)} disabled={disabled}>
-                    {disabled ? 'Guardando…' : 'Guardar cambios'}
+                    {disabled ? 'Saving…' : 'Save changes'}
                   </button>
                 </div>
 
-                {/* Overlay por guardado manual */}
-                {savingFridgeId === fridge._id && <SavingOverlay label={`Guardando "${fridge.name}"…`} />}
+                {savingFridgeId === fridge._id && (
+                  <SavingOverlay label={`Saving "${fridge.name}"…`} />
+                )}
               </section>
             );
           })}
@@ -870,21 +1181,20 @@ function LocationPage() {
 
       {(role === 'admin' || role === 'superuser') && (
         <div className="card" style={{ marginTop: '1rem' }}>
-          <h4>Crear nuevo refrigerador</h4>
+          <h4>Create new fridge</h4>
           <div className="flex-row stack-sm">
             <input
               type="text"
-              placeholder="Nombre del refrigerador"
+              placeholder="Fridge name"
               value={newFridgeName}
               onChange={(e) => setNewFridgeName(e.target.value)}
               style={{ maxWidth: 360 }}
             />
-            <button onClick={handleCreateFridge}>Crear</button>
+            <button onClick={handleCreateFridge}>Create</button>
           </div>
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
         <div
           className={`toast ${toast.type === 'error' ? 'error' : 'ok'}`}
@@ -903,14 +1213,13 @@ function LocationPage() {
               cursor: 'pointer',
               fontWeight: 700,
             }}
-            aria-label="Cerrar notificación"
+            aria-label="Close notification"
           >
             ×
           </button>
         </div>
       )}
 
-      {/* keyframes spinner */}
       <style>{`@keyframes hawking-spin { to { transform: rotate(360deg); } }`}</style>
 
       <Footer />
@@ -918,7 +1227,7 @@ function LocationPage() {
   );
 }
 
-function SavingOverlay({ label = 'Guardando…' }) {
+function SavingOverlay({ label = 'Saving…' }) {
   return (
     <div
       role="dialog"
