@@ -19,7 +19,7 @@ function LocationSummaryPage() {
   const [locations, setLocations] = useState([]);
   const [summaries, setSummaries] = useState({});
   const [loading, setLoading] = useState(true);
-  const [errMsg, setErrMsg] = useState('')
+  const [errMsg, setErrMsg] = useState('');
 
   // thresholds / colores
   const [colorByCapacity] = useState(true);
@@ -36,6 +36,62 @@ function LocationSummaryPage() {
   // Resumen inventario por locación:
   // { [locId]: { initial:{[prod]:num}, final:{[prod]:num}, transfer:{[prod]:+n|-n}, closed:boolean } }
   const [invSummaries, setInvSummaries] = useState({});
+
+  // === NUEVO: selección y copiado ===
+  // modo de selección por locación: { [locId]: boolean }
+  const [selectModeByLoc, setSelectModeByLoc] = useState({});
+  // productos seleccionados por locación: { [locId]: Set<string> }
+  const [selectedByLoc, setSelectedByLoc] = useState({});
+  // feedback breve por locación
+  const [copyMsgByLoc, setCopyMsgByLoc] = useState({});
+
+  const setSelectMode = (locId, on) =>
+    setSelectModeByLoc((p) => ({ ...p, [locId]: !!on }));
+
+  const toggleSelected = (locId, prodName) =>
+    setSelectedByLoc((p) => {
+      const cur = new Set(p[locId] || []);
+      if (cur.has(prodName)) cur.delete(prodName);
+      else cur.add(prodName);
+      return { ...p, [locId]: cur };
+    });
+
+  const clearSelection = (locId) =>
+    setSelectedByLoc((p) => ({ ...p, [locId]: new Set() }));
+
+  const setCopyMsg = (locId, text) => {
+    setCopyMsgByLoc((p) => ({ ...p, [locId]: text }));
+    // auto-clear en 2.2s
+    setTimeout(() => {
+      setCopyMsgByLoc((p2) => {
+        if (p2[locId] !== text) return p2;
+        const { [locId]: _x, ...rest } = p2;
+        return rest;
+      });
+    }, 2200);
+  };
+
+  async function copyToClipboard(text, locId) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // fallback
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopyMsg(locId, 'Copied!');
+    } catch {
+      setCopyMsg(locId, 'Copy failed');
+    }
+  }
 
   const orderMap = useMemo(() => {
     const m = new Map();
@@ -56,7 +112,7 @@ function LocationSummaryPage() {
       setLoading(true);
       setErrMsg('');
       try {
-        // 1) Dashboard overview (capacidad, orden estándar, locaciones, resumen actual)
+        // 1) Dashboard overview
         const r = await API.get('/dashboard/overview', { signal: controller.signal, timeout: 20000 });
         const data = r.data?.data || {};
         setStdOrder(Array.isArray(data.stdOrder) ? data.stdOrder : []);
@@ -67,9 +123,8 @@ function LocationSummaryPage() {
         setSummaries(data.summaries || {});
         setLoading(false);
 
-        // 2) Para cada locación, intentar sesión activa; si no hay, intentar última cerrada (desde storage)
+        // 2) sesiones inventario
         const invMap = {};
-
         await Promise.all(
           (locs || []).map(async (loc) => {
             const locId = loc?._id;
@@ -78,7 +133,6 @@ function LocationSummaryPage() {
             let sessionId = null;
             let consideredClosed = false;
 
-            // 2.a) Intentar sesión activa
             try {
               const activeRes = await API.get('/locations/inventory-sessions/active', {
                 params: { locationId: locId },
@@ -88,32 +142,20 @@ function LocationSummaryPage() {
               const activeSess = activeRes.data?.session;
               if (activeSess?._id) {
                 sessionId = activeSess._id;
-                // En la mayoría de backends "active" implica abierta;
-                // si por diseño viniera cerrada, esto la marca:
                 consideredClosed = activeSess.status === 'closed';
               }
-            } catch (errActive) {
-              if (errActive?.name !== 'CanceledError') {
-                // 404 o no hay sesión activa: no es error crítico
-                // console.warn('Active session fetch error for loc', locId, errActive?.response?.status || errActive);
-              }
-            }
+            } catch {}
 
-            // 2.b) Si NO hay activa, intentar la última cerrada conocida en storage
             if (!sessionId) {
               const storedId = getLastClosedSessionId(locId);
               if (storedId) {
                 sessionId = storedId;
-                consideredClosed = true; // lo tratamos como cerrada
+                consideredClosed = true;
               }
             }
 
-            if (!sessionId) {
-              // No hay nada que mostrar para esta locación
-              return;
-            }
+            if (!sessionId) return;
 
-            // 2.c) Traer el summary de esa sesión
             try {
               const sumRes = await API.get(`/locations/inventory-sessions/${sessionId}/summary`, {
                 signal: controller.signal,
@@ -124,12 +166,8 @@ function LocationSummaryPage() {
               const closedAt = sumRes.data?.data?.closedAt;
               const closed = consideredClosed || !!closedAt;
 
-              // Si está cerrada, persistimos el sessionId; si no, lo olvidamos
-              if (closed) {
-                rememberClosedSession(locId, sessionId);
-              } else {
-                forgetClosedSession(locId);
-              }
+              if (closed) rememberClosedSession(locId, sessionId);
+              else forgetClosedSession(locId);
 
               const initial = {};
               const final = {};
@@ -138,7 +176,7 @@ function LocationSummaryPage() {
                 const name = row.productName;
                 initial[name] = Number(row.inicial) || 0;
                 if (row.final == null || Number.isNaN(Number(row.final))) {
-                  // sesión abierta -> sin final
+                  // abierta
                 } else {
                   final[name] = Number(row.final) || 0;
                 }
@@ -147,16 +185,11 @@ function LocationSummaryPage() {
               }
 
               invMap[locId] = { initial, final, transfer, closed };
-            } catch (sumErr) {
-              // Si falló el summary para una sesión almacenada, la olvidamos
+            } catch {
               forgetClosedSession(locId);
-              if (sumErr?.name !== 'CanceledError') {
-                // console.warn('Inv summary fetch error for loc', locId, sumErr?.response?.status || sumErr);
-              }
             }
           })
         );
-
         setInvSummaries(invMap);
       } catch (e) {
         if (e?.name !== 'CanceledError') {
@@ -295,19 +328,16 @@ function LocationSummaryPage() {
 
           const inv = invSummaries[loc._id] || {};
           const sessionClosed = !!inv.closed;
-          const showSalesCol = sessionClosed; // Ventas (sesión) solo si la sesión está cerrada
+          const showSalesCol = sessionClosed;
 
           let rows = keys.map((prod) => {
             const current = Number(breakdown[prod] || 0);
             const cap = effectiveCapacityFor(loc, prod);
             const ratio = cap > 0 ? current / cap : NaN;
 
-            // Lectura de inicial / final / transfer (si existe sesión)
             const initial = Number(inv.initial?.[prod]);
             const final = Number(inv.final?.[prod]);
-            const transferNet = Number(inv.transfer?.[prod]); // + / -
-
-            // Ventas (sesión) = Inicial − Final (si hay final)
+            const transferNet = Number(inv.transfer?.[prod]);
             const sales =
               Number.isFinite(initial) && Number.isFinite(final)
                 ? Math.max(0, initial - final)
@@ -323,19 +353,78 @@ function LocationSummaryPage() {
           });
 
           rows = filterProductsByStatus(rows);
-
           if (hideEmptyAfterFilter && rows.length === 0) return null;
+
+          const locId = String(loc._id);
+          const selectMode = !!selectModeByLoc[locId];
+          const selectedSet = selectedByLoc[locId] || new Set();
+
+          const copyNumbers = async () => {
+            const chosen = rows.filter((r) => selectedSet.has(r.prod));
+            if (chosen.length === 0) {
+              setCopyMsg(locId, 'No items selected');
+              return;
+            }
+            // una cifra por línea (columna única en Excel)
+            const text = chosen.map((r) => String(r.current ?? '')).join('\n');
+            await copyToClipboard(text, locId);
+          };
+
+          const copyNameAndNumbers = async () => {
+            const chosen = rows.filter((r) => selectedSet.has(r.prod));
+            if (chosen.length === 0) {
+              setCopyMsg(locId, 'No items selected');
+              return;
+            }
+            // Producto<TAB>Current por línea (dos columnas en Excel)
+            const text = chosen.map((r) => `${r.prod}\t${r.current ?? ''}`).join('\n');
+            await copyToClipboard(text, locId);
+          };
 
           return (
             <section key={loc._id} className="card loc-card">
-              <header className="loc-head">
-                <h3 className="m0">{loc.name}</h3>
-                <div className="loc-meta">
-                  <span className="pill">Total Products: <b>{s.totalLocation || 0}</b></span>
-                  <span className="pill">Users: <b>{loc.usersCount || 0}</b></span>
-                  <span className="pill">Fridges: <b>{(loc.refrigerators || []).length || 0}</b></span>
-                  {!sessionClosed && (
-                    <span className="pill" title="La sesión sigue abierta">Sesión abierta</span>
+              <header className="loc-head" style={{ alignItems: 'flex-start', gap: 12 }}>
+                <div>
+                  <h3 className="m0">{loc.name}</h3>
+                  <div className="loc-meta">
+                    <span className="pill">Total Products: <b>{s.totalLocation || 0}</b></span>
+                    <span className="pill">Users: <b>{loc.usersCount || 0}</b></span>
+                    <span className="pill">Fridges: <b>{(loc.refrigerators || []).length || 0}</b></span>
+                    {!sessionClosed && (
+                      <span className="pill" title="La sesión sigue abierta">Sesión abierta</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* NUEVO: controles de selección/copia para ESTA locación */}
+                <div className="flex-row" style={{ gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={`chip-radio ${selectMode ? 'active' : ''}`}
+                    onClick={() => {
+                      const next = !selectMode;
+                      setSelectMode(locId, next);
+                      if (!next) clearSelection(locId);
+                    }}
+                    title="Enable selection mode for this location"
+                  >
+                    {selectMode ? 'Selection ON' : 'Selection OFF'}
+                  </button>
+                  {selectMode && (
+                    <>
+                      <button className="btn btn--secondary" onClick={copyNumbers} title="Copy Current of selected items">
+                        Copy (numbers)
+                      </button>
+                      <button className="btn" onClick={copyNameAndNumbers} title="Copy Product and Current (TAB-separated)">
+                        Copy (name + number)
+                      </button>
+                      <button className="btn btn--danger" onClick={() => clearSelection(locId)}>
+                        Clear
+                      </button>
+                      {copyMsgByLoc[locId] && (
+                        <span className="pill" aria-live="polite">{copyMsgByLoc[locId]}</span>
+                      )}
+                    </>
                   )}
                 </div>
               </header>
@@ -346,10 +435,11 @@ function LocationSummaryPage() {
                 <div className="table-wrap table-wrap--shadow">
                   <table
                     className={`table-excel ${denseRows ? 'table--dense' : ''}`}
-                    style={{ minWidth: showSalesCol ? 980 : 860 }}
+                    style={{ minWidth: (showSalesCol ? 980 : 860) + (selectMode ? 60 : 0) }}
                   >
                     <thead>
                       <tr>
+                        {selectMode && <th style={{ width: 40 }} aria-label="Select" title="Select" />}
                         <th style={{ width: '34%' }}>Product</th>
                         <th className="num" style={{ width: 110 }}>Innitial</th>
                         <th className="num" style={{ width: 110 }}>Final</th>
@@ -376,8 +466,20 @@ function LocationSummaryPage() {
                         const hasTransfer = Number.isFinite(r.transferNet) && r.transferNet !== 0;
                         const hasSales = Number.isFinite(r.sales);
 
+                        const checked = selectedSet.has(r.prod);
+
                         return (
                           <tr key={`${loc._id}-${r.prod}`}>
+                            {selectMode && (
+                              <td className="num" style={{ textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleSelected(locId, r.prod)}
+                                  aria-label={`Select ${r.prod}`}
+                                />
+                              </td>
+                            )}
                             <td>{r.prod}</td>
 
                             {/* Inicial con micro delta de transferencias */}
@@ -396,7 +498,7 @@ function LocationSummaryPage() {
                             {/* Final */}
                             <td className="num">{hasFinal ? r.final : '—'}</td>
 
-                            {/* Ventas = Inicial − Final (solo si la sesión está cerrada) */}
+                            {/* Ventas */}
                             {showSalesCol && (
                               <td className="num" title="Ventas de la sesión (Inicial − Final)">
                                 {hasSales ? r.sales : '—'}
