@@ -19,6 +19,15 @@ function useQueryMode() {
   return MODE_INITIAL;
 }
 
+// Helper para escapar HTML en nombres de producto / locación
+const escapeHtml = (str = '') =>
+  String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
 function LocationPage() {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -892,6 +901,132 @@ function LocationPage() {
     navigate({ search: params.toString() }, { replace: false });
   };
 
+  // === NUEVO: construir HTML imprimible por nevera ===
+  const buildPrintableHtmlForFridge = (fridge) => {
+    const frId = fridge._id;
+    const frEditsAll = fridgeEditsByMode[viewMode] || {};
+    const frPartsAll = partsEditsByMode[viewMode] || {};
+    const frEdits = frEditsAll[frId] || {};
+    const frParts = frPartsAll[frId] || {};
+    const baseMap =
+      (viewMode === MODE_FINAL ? baselineFinal : baselineInitial)[frId] || {};
+
+    const rows = [...(fridge.products || [])]
+      .sort((a, b) => {
+        const ia = orderIndex(a.productName);
+        const ib = orderIndex(b.productName);
+        if (ia !== ib) return ia - ib;
+        return String(a.productName).localeCompare(String(b.productName));
+      })
+      .map((p) => {
+        const parts = frParts[p.productName] || [];
+        let qty;
+        if (parts.length > 0) {
+          qty = totalFromParts(parts);
+        } else if (frEdits[p.productName] != null) {
+          const v = parseInt(String(frEdits[p.productName]).replace(/\D+/g, ''), 10);
+          qty = Number.isFinite(v) ? v : 0;
+        } else {
+          const v = parseInt(String(baseMap[p.productName] ?? '').replace(/\D+/g, ''), 10);
+          qty = Number.isFinite(v) ? v : 0;
+        }
+        return { name: p.productName, qty: qty || 0 };
+      });
+
+    const title = `${locationData?.name || ''} - ${fridge.name}`;
+    const modeLabel = viewMode === MODE_FINAL ? 'FINAL' : 'INITIAL';
+    const dateStr = new Date().toLocaleString();
+
+    const rowsHtml = rows
+      .map(
+        (r) =>
+          `<tr><td>${escapeHtml(r.name)}</td><td class="qty">${r.qty}</td></tr>`
+      )
+      .join('');
+
+    return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      @page {
+        margin: 4mm;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        font-size: 11px;
+        margin: 0;
+        padding: 4px;
+      }
+      h1 {
+        font-size: 13px;
+        margin: 0 0 4px 0;
+        text-align: center;
+      }
+      .meta {
+        font-size: 10px;
+        text-align: center;
+        margin-bottom: 6px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      td {
+        padding: 2px 0;
+        word-break: break-word;
+      }
+      .qty {
+        text-align: right;
+        padding-left: 8px;
+      }
+      .footer {
+        margin-top: 6px;
+        text-align: center;
+        font-size: 9px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="meta">
+      Mode: ${escapeHtml(modeLabel)}<br/>
+      ${escapeHtml(dateStr)}
+    </div>
+    <table>
+      ${rowsHtml}
+    </table>
+    <div class="footer">
+      Tools Helper per Fridge
+    </div>
+    <script>
+      window.onload = function () {
+        window.print();
+        setTimeout(function () { window.close(); }, 300);
+      };
+    </script>
+  </body>
+</html>`;
+  };
+
+  // handler para abrir ventana de impresión
+  const handlePrintFridge = (fridge) => {
+    const html = buildPrintableHtmlForFridge(fridge);
+    const w = window.open('', '_blank', 'width=400,height=600');
+    if (!w) {
+      setToast({
+        type: 'error',
+        text: 'Popup blocked by browser. Please allow popups to print.',
+      });
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+  };
+
   if (loading) return <p>Loading location...</p>;
   if (!locationData) return <p>Location not found or error occurred.</p>;
 
@@ -1000,7 +1135,7 @@ function LocationPage() {
           {locationData.refrigerators.map((fridge) => {
             const disabled = savingFridgeId === fridge._id;
             const thisRowSaving = rowSaving[fridge._id] || {};
-            const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
+            const frEditsLocal = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
             const frDirty = (dirtyMapByMode[viewMode] || {})[fridge._id] || {};
             const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
             const frExpanded = (expandedMap[fridge._id] || {});
@@ -1071,7 +1206,7 @@ function LocationPage() {
 
                           // main display value: from edits (mode) or baseline
                           const mainDisplay =
-                            frEdits[prod.productName] ??
+                            frEditsLocal[prod.productName] ??
                             (viewMode === MODE_INITIAL ? String(prod.quantity) : '');
 
                           const isExpanded = !!frExpanded[prod.productName];
@@ -1252,9 +1387,18 @@ function LocationPage() {
                   </table>
                 </div>
 
-                <div className="fridge-foot">
+                <div className="fridge-foot" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button onClick={() => handleSaveFridge(fridge)} disabled={disabled}>
                     {disabled ? 'Saving…' : 'Save changes'}
+                  </button>
+                  {/* NUEVO: botón de impresión por nevera */}
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => handlePrintFridge(fridge)}
+                    disabled={disabled}
+                  >
+                    Print receipt
                   </button>
                 </div>
 
