@@ -966,7 +966,7 @@ function LocationPage() {
     doc.line(left, y, 58 - left, y);
 
     // Pequeño espacio antes del siguiente producto
-    y += 1.5;
+    y += 0.5;
   });
 
     const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
