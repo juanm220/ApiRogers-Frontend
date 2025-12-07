@@ -937,15 +937,16 @@ function LocationPage() {
     doc.line(left, y, 58 - left, y);
     y += line;
 
-    rows.forEach((r) => {
+  rows.forEach((r) => {
     const name = String(r.name || '');
     const qty = String(r.qty ?? '0');
 
     const wrapped = doc.splitTextToSize(name, maxWidth - 12);
+    const maxY = 115; // límite inferior útil en una hoja de 120mm
 
-    // Escribimos el nombre (posible multi-línea)
+    // Escribimos el nombre (puede ocupar varias líneas)
     wrapped.forEach((ln, idx) => {
-      if (y > 112) return; // casi al fondo del papel
+      if (y > maxY) return;
 
       doc.text(ln, left, y);
 
@@ -954,19 +955,18 @@ function LocationPage() {
         doc.text(qty, 58 - left, y, { align: 'right' });
       }
 
-      y += line;
+      y += line; // avanzamos a la siguiente línea
     });
 
-    // Línea justo debajo del producto, con un pequeño respiro
-    const sepY = y + 0.5; // un pelín por debajo del último renglón
-    if (sepY < 116) {
-      doc.setLineWidth(0.2);   // más marcada
-      doc.setDrawColor(0);     // negra
-      doc.line(left, sepY, 58 - left, sepY);
-    }
+    if (y > maxY) return;
 
-    // Dejamos un mini espacio antes del siguiente producto
-    y = sepY + 1;
+    // Línea justo debajo del último renglón del producto
+    doc.setLineWidth(0.2);
+    doc.setDrawColor(0); // negro sólido
+    doc.line(left, y, 58 - left, y);
+
+    // Pequeño espacio antes del siguiente producto
+    y += 1.5;
   });
 
     const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
