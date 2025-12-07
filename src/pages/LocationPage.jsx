@@ -899,135 +899,109 @@ function LocationPage() {
     navigate({ search: params.toString() }, { replace: false });
   };
 
-  // ======== PRINT BY FRIDGE ========
-  const handlePrintFridge = (fridge) => {
-    if (!fridge) return;
+ // ======== PRINT BY FRIDGE (inline, sin popup) ========
+const handlePrintFridge = (fridge) => {
+  if (!fridge) return;
 
-    const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
-    const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
+  const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
+  const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
 
-    // Construimos filas ordenadas exactamente igual que en la tabla
-    const products = [...(fridge.products || [])].sort((a, b) => {
-      const ia = orderIndex(a.productName);
-      const ib = orderIndex(b.productName);
-      if (ia !== ib) return ia - ib;
-      return String(a.productName).localeCompare(String(b.productName));
-    });
+  // Orden igual que en la tabla
+  const products = [...(fridge.products || [])].sort((a, b) => {
+    const ia = orderIndex(a.productName);
+    const ib = orderIndex(b.productName);
+    if (ia !== ib) return ia - ib;
+    return String(a.productName).localeCompare(String(b.productName));
+  });
 
-    const rows = products.map((p) => {
-      const curParts = frParts[p.productName] || [];
-      const sumParts = totalFromParts(curParts);
-      const editVal = frEdits[p.productName];
+  const rows = products.map((p) => {
+    const curParts = frParts[p.productName] || [];
+    const sumParts = totalFromParts(curParts);
+    const editVal = frEdits[p.productName];
 
-      let qty;
-
-      if (curParts.length > 0 && Number.isFinite(sumParts)) {
-        qty = sumParts;
-      } else if (editVal !== undefined && editVal !== null && editVal !== '') {
-        const parsed = parseInt(String(editVal).replace(/\D+/g, ''), 10);
-        qty = Number.isFinite(parsed) ? parsed : 0;
-      } else if (viewMode === MODE_INITIAL) {
-        qty = Number(p.quantity) || 0;
-      } else {
-        // Final view sin editar => 0
-        qty = 0;
-      }
-
-      return {
-        name: p.productName,
-        qty,
-      };
-    });
-
-    const win = window.open('', '_blank', 'width=480,height=720');
-    if (!win) {
-      alert('Please allow pop-ups to print the fridge.');
-      return;
+    let qty;
+    if (curParts.length > 0 && Number.isFinite(sumParts)) {
+      qty = sumParts;
+    } else if (editVal !== undefined && editVal !== null && editVal !== '') {
+      const parsed = parseInt(String(editVal).replace(/\D+/g, ''), 10);
+      qty = Number.isFinite(parsed) ? parsed : 0;
+    } else if (viewMode === MODE_INITIAL) {
+      qty = Number(p.quantity) || 0;
+    } else {
+      qty = 0; // Final view sin editar
     }
 
-    const safeLocation = locationData?.name || 'Location';
-    const modeLabel = viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory';
+    return { name: p.productName, qty };
+  });
 
-    win.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>${safeLocation} - ${fridge.name}</title>
-          <style>
-            @page {
-              margin: 4mm;
-            }
-            body {
-              font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-              font-size: 11px;
-              line-height: 1.3;
-            }
-            h1, h2, h3 {
-              margin: 0 0 4px;
-              font-size: 12px;
-              text-align: center;
-            }
-            .meta {
-              text-align: center;
-              margin-bottom: 6px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-            }
-            th, td {
-              padding: 2px 0;
-            }
-            th {
-              border-bottom: 1px solid #000;
-              font-weight: 600;
-            }
-            td.qty {
-              text-align: right;
-            }
-            .small {
-              font-size: 9px;
-            }
-          </style>
-        </head>
-        <body>
-          <h2>Tools Helper per Fridge</h2>
-          <div class="meta">
-            <div><strong>${safeLocation}</strong></div>
-            <div>Fridge: <strong>${fridge.name}</strong></div>
-            <div class="small">${modeLabel}</div>
-            <div class="small">${new Date().toLocaleString()}</div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="text-align:left;">Product</th>
-                <th style="text-align:right;">Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows
-                .map(
-                  (r) => `
-                <tr>
-                  <td>${String(r.name).replace(/</g, '&lt;')}</td>
-                  <td class="qty">${r.qty}</td>
-                </tr>`
-                )
-                .join('')}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `);
+  const safeLocation = locationData?.name || 'Location';
+  const modeLabel = viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory';
+  const nowStr = new Date().toLocaleString();
 
-    win.document.close();
-    win.focus();
-    win.print();
-    // muchas térmicas cierran después de imprimir; si no quieres cerrarla, comenta esta línea:
-    win.close();
-  };
+  const html = `
+    <div>
+      <h2 style="text-align:center;margin:0 0 4px;">Tools Helper per Fridge</h2>
+      <div style="text-align:center;margin-bottom:6px;font-size:11px;">
+        <div><strong>${safeLocation}</strong></div>
+        <div>Fridge: <strong>${fridge.name}</strong></div>
+        <div style="font-size:9px;">${modeLabel}</div>
+        <div style="font-size:9px;">${nowStr}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.3;">
+        <thead>
+          <tr>
+            <th style="text-align:left;border-bottom:1px solid #000;">Product</th>
+            <th style="text-align:right;border-bottom:1px solid #000;">Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (r) => `
+            <tr>
+              <td>${String(r.name).replace(/</g, '&lt;')}</td>
+              <td style="text-align:right;">${r.qty}</td>
+            </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // Contenedor oculto para el ticket
+  const containerId = 'fridge-print-root';
+  let container = document.getElementById(containerId);
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = containerId;
+    document.body.appendChild(container);
+
+    // Estilos para mostrar SOLO el ticket al imprimir
+    const style = document.createElement('style');
+    style.textContent = `
+      @media print {
+        body * { visibility: hidden; }
+        #${containerId}, #${containerId} * { visibility: visible; }
+        #${containerId} {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          padding: 4mm;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  container.innerHTML = html;
+
+  // Lanza el diálogo de impresión del navegador (elige tu térmica)
+  window.print();
+};
 
   if (loading) return <p>Loading location...</p>;
   if (!locationData) return <p>Location not found or error occurred.</p>;
