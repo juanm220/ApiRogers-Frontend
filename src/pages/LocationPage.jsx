@@ -19,15 +19,6 @@ function useQueryMode() {
   return MODE_INITIAL;
 }
 
-// Helper para escapar HTML en nombres de producto / locación
-const escapeHtml = (str = '') =>
-  String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-
 function LocationPage() {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -387,7 +378,9 @@ function LocationPage() {
   async function handleCloseWithFinal() {
     if (invBusy || !invActive?._id) return;
     const ok = window.confirm(
-      `The session will be closed with the values from the "${viewMode === MODE_FINAL ? 'Final' : 'Initial'}" view. Confirm?`
+      `The session will be closed with the values from the "${
+        viewMode === MODE_FINAL ? 'Final' : 'Initial'
+      }" view. Confirm?`
     );
     if (!ok) return;
 
@@ -512,7 +505,10 @@ function LocationPage() {
   };
 
   const totalFromParts = (partsArr) =>
-    (partsArr || []).reduce((a, b) => a + (parseInt(String(b.quantity || '0'), 10) || 0), 0);
+    (partsArr || []).reduce(
+      (a, b) => a + (parseInt(String(b.quantity || '0'), 10) || 0),
+      0
+    );
 
   const ensureExpanded = (fridgeId, productName, expanded) => {
     setExpandedMap((prev) => {
@@ -527,9 +523,11 @@ function LocationPage() {
   // Improved: seed the primary part from what the user currently sees in the main cell
   const addPart = (fridgeId, productName) => {
     // Read backend qty for this product (used for Initial mode when no edit yet)
-    const fr = (locationData?.refrigerators || []).find((x) => String(x._id) === String(fridgeId));
+    const fr = (locationData?.refrigerators || []).find(
+      (x) => String(x._id) === String(fridgeId)
+    );
     const backendQty = fr
-      ? (fr.products.find((p) => p.productName === productName)?.quantity || 0)
+      ? fr.products.find((p) => p.productName === productName)?.quantity || 0
       : 0;
 
     // Value currently visible in the main cell
@@ -901,130 +899,134 @@ function LocationPage() {
     navigate({ search: params.toString() }, { replace: false });
   };
 
-  // === NUEVO: construir HTML imprimible por nevera ===
-  const buildPrintableHtmlForFridge = (fridge) => {
-    const frId = fridge._id;
-    const frEditsAll = fridgeEditsByMode[viewMode] || {};
-    const frPartsAll = partsEditsByMode[viewMode] || {};
-    const frEdits = frEditsAll[frId] || {};
-    const frParts = frPartsAll[frId] || {};
-    const baseMap =
-      (viewMode === MODE_FINAL ? baselineFinal : baselineInitial)[frId] || {};
-
-    const rows = [...(fridge.products || [])]
-      .sort((a, b) => {
-        const ia = orderIndex(a.productName);
-        const ib = orderIndex(b.productName);
-        if (ia !== ib) return ia - ib;
-        return String(a.productName).localeCompare(String(b.productName));
-      })
-      .map((p) => {
-        const parts = frParts[p.productName] || [];
-        let qty;
-        if (parts.length > 0) {
-          qty = totalFromParts(parts);
-        } else if (frEdits[p.productName] != null) {
-          const v = parseInt(String(frEdits[p.productName]).replace(/\D+/g, ''), 10);
-          qty = Number.isFinite(v) ? v : 0;
-        } else {
-          const v = parseInt(String(baseMap[p.productName] ?? '').replace(/\D+/g, ''), 10);
-          qty = Number.isFinite(v) ? v : 0;
-        }
-        return { name: p.productName, qty: qty || 0 };
-      });
-
-    const title = `${locationData?.name || ''} - ${fridge.name}`;
-    const modeLabel = viewMode === MODE_FINAL ? 'FINAL' : 'INITIAL';
-    const dateStr = new Date().toLocaleString();
-
-    const rowsHtml = rows
-      .map(
-        (r) =>
-          `<tr><td>${escapeHtml(r.name)}</td><td class="qty">${r.qty}</td></tr>`
-      )
-      .join('');
-
-    return `<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(title)}</title>
-    <style>
-      @page {
-        margin: 4mm;
-      }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-        font-size: 11px;
-        margin: 0;
-        padding: 4px;
-      }
-      h1 {
-        font-size: 13px;
-        margin: 0 0 4px 0;
-        text-align: center;
-      }
-      .meta {
-        font-size: 10px;
-        text-align: center;
-        margin-bottom: 6px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      td {
-        padding: 2px 0;
-        word-break: break-word;
-      }
-      .qty {
-        text-align: right;
-        padding-left: 8px;
-      }
-      .footer {
-        margin-top: 6px;
-        text-align: center;
-        font-size: 9px;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>${escapeHtml(title)}</h1>
-    <div class="meta">
-      Mode: ${escapeHtml(modeLabel)}<br/>
-      ${escapeHtml(dateStr)}
-    </div>
-    <table>
-      ${rowsHtml}
-    </table>
-    <div class="footer">
-      Tools Helper per Fridge
-    </div>
-    <script>
-      window.onload = function () {
-        window.print();
-        setTimeout(function () { window.close(); }, 300);
-      };
-    </script>
-  </body>
-</html>`;
-  };
-
-  // handler para abrir ventana de impresión
+  // ======== PRINT BY FRIDGE ========
   const handlePrintFridge = (fridge) => {
-    const html = buildPrintableHtmlForFridge(fridge);
-    const w = window.open('', '_blank', 'width=400,height=600');
-    if (!w) {
-      setToast({
-        type: 'error',
-        text: 'Popup blocked by browser. Please allow popups to print.',
-      });
+    if (!fridge) return;
+
+    const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
+    const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
+
+    // Construimos filas ordenadas exactamente igual que en la tabla
+    const products = [...(fridge.products || [])].sort((a, b) => {
+      const ia = orderIndex(a.productName);
+      const ib = orderIndex(b.productName);
+      if (ia !== ib) return ia - ib;
+      return String(a.productName).localeCompare(String(b.productName));
+    });
+
+    const rows = products.map((p) => {
+      const curParts = frParts[p.productName] || [];
+      const sumParts = totalFromParts(curParts);
+      const editVal = frEdits[p.productName];
+
+      let qty;
+
+      if (curParts.length > 0 && Number.isFinite(sumParts)) {
+        qty = sumParts;
+      } else if (editVal !== undefined && editVal !== null && editVal !== '') {
+        const parsed = parseInt(String(editVal).replace(/\D+/g, ''), 10);
+        qty = Number.isFinite(parsed) ? parsed : 0;
+      } else if (viewMode === MODE_INITIAL) {
+        qty = Number(p.quantity) || 0;
+      } else {
+        // Final view sin editar => 0
+        qty = 0;
+      }
+
+      return {
+        name: p.productName,
+        qty,
+      };
+    });
+
+    const win = window.open('', '_blank', 'width=480,height=720');
+    if (!win) {
+      alert('Please allow pop-ups to print the fridge.');
       return;
     }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
+
+    const safeLocation = locationData?.name || 'Location';
+    const modeLabel = viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory';
+
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${safeLocation} - ${fridge.name}</title>
+          <style>
+            @page {
+              margin: 4mm;
+            }
+            body {
+              font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              font-size: 11px;
+              line-height: 1.3;
+            }
+            h1, h2, h3 {
+              margin: 0 0 4px;
+              font-size: 12px;
+              text-align: center;
+            }
+            .meta {
+              text-align: center;
+              margin-bottom: 6px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            th, td {
+              padding: 2px 0;
+            }
+            th {
+              border-bottom: 1px solid #000;
+              font-weight: 600;
+            }
+            td.qty {
+              text-align: right;
+            }
+            .small {
+              font-size: 9px;
+            }
+          </style>
+        </head>
+        <body>
+          <h2>Tools Helper per Fridge</h2>
+          <div class="meta">
+            <div><strong>${safeLocation}</strong></div>
+            <div>Fridge: <strong>${fridge.name}</strong></div>
+            <div class="small">${modeLabel}</div>
+            <div class="small">${new Date().toLocaleString()}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align:left;">Product</th>
+                <th style="text-align:right;">Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows
+                .map(
+                  (r) => `
+                <tr>
+                  <td>${String(r.name).replace(/</g, '&lt;')}</td>
+                  <td class="qty">${r.qty}</td>
+                </tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+
+    win.document.close();
+    win.focus();
+    win.print();
+    // muchas térmicas cierran después de imprimir; si no quieres cerrarla, comenta esta línea:
+    win.close();
   };
 
   if (loading) return <p>Loading location...</p>;
@@ -1054,7 +1056,10 @@ function LocationPage() {
       )}
 
       {/* Mode toggle */}
-      <div className="card" style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+      <div
+        className="card"
+        style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}
+      >
         <strong>Inventory: </strong>
         <button
           className={`chip-radio ${viewMode === MODE_INITIAL ? 'active' : ''}`}
@@ -1101,7 +1106,13 @@ function LocationPage() {
       {/* Session controls */}
       <div
         className="card"
-        style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+        style={{
+          marginBottom: '0.75rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
       >
         <strong style={{ marginRight: 8 }}>Session</strong>
         {!invActive ? (
@@ -1117,16 +1128,21 @@ function LocationPage() {
             <button onClick={handleCloseWithFinal} disabled={invBusy}>
               {invBusy
                 ? 'Closing…'
-                : `Close with ${viewMode === MODE_FINAL ? 'FINAL (Final view)' : 'FINAL (Initial view)'}`}
+                : `Close with ${
+                    viewMode === MODE_FINAL ? 'FINAL (Final view)' : 'FINAL (Initial view)'
+                  }`}
             </button>
           </>
         )}
       </div>
 
       {viewMode === MODE_FINAL && (
-        <div className="card" style={{ borderColor: '#ef4444', background: '#fff1f2', marginBottom: 10 }}>
-          <b>Final view:</b> fields start at 0. Autosave updates inventory with the values you enter.
-          When you close from this view, the final snapshot will use these values.
+        <div
+          className="card"
+          style={{ borderColor: '#ef4444', background: '#fff1f2', marginBottom: 10 }}
+        >
+          <b>Final view:</b> fields start at 0. Autosave updates inventory with the values you
+          enter. When you close from this view, the final snapshot will use these values.
         </div>
       )}
 
@@ -1135,10 +1151,10 @@ function LocationPage() {
           {locationData.refrigerators.map((fridge) => {
             const disabled = savingFridgeId === fridge._id;
             const thisRowSaving = rowSaving[fridge._id] || {};
-            const frEditsLocal = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
+            const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
             const frDirty = (dirtyMapByMode[viewMode] || {})[fridge._id] || {};
             const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
-            const frExpanded = (expandedMap[fridge._id] || {});
+            const frExpanded = expandedMap[fridge._id] || {};
 
             return (
               <section key={fridge._id} className="card fridge-card" aria-busy={disabled}>
@@ -1180,7 +1196,10 @@ function LocationPage() {
                   </div>
                 </header>
 
-                <div className="table-wrap table-wrap--shadow" style={{ position: 'relative' }}>
+                <div
+                  className="table-wrap table-wrap--shadow"
+                  style={{ position: 'relative' }}
+                >
                   <table className="table-excel" aria-describedby={`desc-${fridge._id}`}>
                     <caption id={`desc-${fridge._id}`} style={{ display: 'none' }}>
                       Products table for fridge {fridge.name}
@@ -1188,7 +1207,9 @@ function LocationPage() {
                     <thead>
                       <tr>
                         <th style={{ width: '42%' }}>Product</th>
-                        <th className="num" style={{ width: 130 }}>Quantity</th>
+                        <th className="num" style={{ width: 130 }}>
+                          Quantity
+                        </th>
                         <th className="num" style={{ width: 70 }}></th>
                       </tr>
                     </thead>
@@ -1198,7 +1219,9 @@ function LocationPage() {
                           const ia = orderIndex(a.productName);
                           const ib = orderIndex(b.productName);
                           if (ia !== ib) return ia - ib;
-                          return String(a.productName).localeCompare(String(b.productName));
+                          return String(a.productName).localeCompare(
+                            String(b.productName)
+                          );
                         })
                         .map((prod, index) => {
                           const refKey = `${fridge._id}-${index}`;
@@ -1206,8 +1229,10 @@ function LocationPage() {
 
                           // main display value: from edits (mode) or baseline
                           const mainDisplay =
-                            frEditsLocal[prod.productName] ??
-                            (viewMode === MODE_INITIAL ? String(prod.quantity) : '');
+                            frEdits[prod.productName] ??
+                            (viewMode === MODE_INITIAL
+                              ? String(prod.quantity)
+                              : '');
 
                           const isExpanded = !!frExpanded[prod.productName];
                           const curParts = frParts[prod.productName] || [];
@@ -1230,14 +1255,19 @@ function LocationPage() {
                                         marginLeft: 8,
                                         verticalAlign: 'middle',
                                         borderRadius: '50%',
-                                        border: '2px solid rgba(37,99,235,.25)',
+                                        border:
+                                          '2px solid rgba(37,99,235,.25)',
                                         borderTopColor: '#2563eb',
-                                        animation: 'hawking-spin 800ms linear infinite',
+                                        animation:
+                                          'hawking-spin 800ms linear infinite',
                                       }}
                                     />
                                   )}
                                   {showSumBadge && (
-                                    <small className="pill" style={{ marginLeft: 8 }}>
+                                    <small
+                                      className="pill"
+                                      style={{ marginLeft: 8 }}
+                                    >
                                       Sum: <b>{sumParts}</b>
                                     </small>
                                   )}
@@ -1249,10 +1279,16 @@ function LocationPage() {
                                     }}
                                     value={mainDisplay}
                                     onChange={(newVal) =>
-                                      handleQuantityChange(fridge._id, prod.productName, newVal)
+                                      handleQuantityChange(
+                                        fridge._id,
+                                        prod.productName,
+                                        newVal
+                                      )
                                     }
                                     onEnter={() => {
-                                      const nextKey = `${fridge._id}-${index + 1}`;
+                                      const nextKey = `${fridge._id}-${
+                                        index + 1
+                                      }`;
                                       const nextEl = inputRefs.current[nextKey];
                                       if (nextEl?.focus) nextEl.focus();
                                     }}
@@ -1263,13 +1299,24 @@ function LocationPage() {
                                     spellCheck={false}
                                   />
                                 </td>
-                                <td className="num" style={{ textAlign: 'right' }}>
+                                <td
+                                  className="num"
+                                  style={{ textAlign: 'right' }}
+                                >
                                   <button
                                     className="btn btn--secondary"
                                     onClick={() =>
-                                      ensureExpanded(fridge._id, prod.productName, !isExpanded)
+                                      ensureExpanded(
+                                        fridge._id,
+                                        prod.productName,
+                                        !isExpanded
+                                      )
                                     }
-                                    title={isExpanded ? 'Hide parts' : 'Show parts / Add part'}
+                                    title={
+                                      isExpanded
+                                        ? 'Hide parts'
+                                        : 'Show parts / Add part'
+                                    }
                                   >
                                     {isExpanded ? '▾' : '▸'}
                                   </button>
@@ -1278,7 +1325,10 @@ function LocationPage() {
 
                               {isExpanded && (
                                 <tr>
-                                  <td colSpan={3} style={{ background: '#f8fafc' }}>
+                                  <td
+                                    colSpan={3}
+                                    style={{ background: '#f8fafc' }}
+                                  >
                                     {/* Parts editor */}
                                     <div
                                       className="card"
@@ -1290,34 +1340,66 @@ function LocationPage() {
                                     >
                                       <div
                                         className="flex-row"
-                                        style={{ justifyContent: 'space-between', alignItems: 'center' }}
+                                        style={{
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                        }}
                                       >
                                         <strong>Parts (shelves / groups)</strong>
                                         <button
                                           className="btn"
-                                          onClick={() => addPart(fridge._id, prod.productName)}
+                                          onClick={() =>
+                                            addPart(
+                                              fridge._id,
+                                              prod.productName
+                                            )
+                                          }
                                         >
                                           + Add part
                                         </button>
                                       </div>
 
                                       {curParts.length === 0 ? (
-                                        <p style={{ marginTop: 8, opacity: 0.7 }}>
-                                          No parts yet. Click “+ Add part” to split this product into sub-entries.
+                                        <p
+                                          style={{
+                                            marginTop: 8,
+                                            opacity: 0.7,
+                                          }}
+                                        >
+                                          No parts yet. Click “+ Add part” to
+                                          split this product into sub-entries.
                                         </p>
                                       ) : (
-                                        <div className="table-wrap" style={{ marginTop: 8 }}>
-                                          <table className="table-excel table--dense" style={{ minWidth: 520 }}>
+                                        <div
+                                          className="table-wrap"
+                                          style={{ marginTop: 8 }}
+                                        >
+                                          <table
+                                            className="table-excel table--dense"
+                                            style={{ minWidth: 520 }}
+                                          >
                                             <thead>
                                               <tr>
-                                                <th style={{ width: '60%' }}>Label</th>
-                                                <th className="num" style={{ width: 160 }}>Quantity</th>
-                                                <th className="num" style={{ width: 80 }}></th>
+                                                <th style={{ width: '60%' }}>
+                                                  Label
+                                                </th>
+                                                <th
+                                                  className="num"
+                                                  style={{ width: 160 }}
+                                                >
+                                                  Quantity
+                                                </th>
+                                                <th
+                                                  className="num"
+                                                  style={{ width: 80 }}
+                                                ></th>
                                               </tr>
                                             </thead>
                                             <tbody>
                                               {curParts.map((part, pidx) => (
-                                                <tr key={`${prod.productName}-part-${pidx}`}>
+                                                <tr
+                                                  key={`${prod.productName}-part-${pidx}`}
+                                                >
                                                   <td>
                                                     <input
                                                       type="text"
@@ -1331,12 +1413,18 @@ function LocationPage() {
                                                           e.target.value
                                                         )
                                                       }
-                                                      placeholder={pidx === 0 ? 'Primary (e.g., Top shelf)' : 'Part name'}
+                                                      placeholder={
+                                                        pidx === 0
+                                                          ? 'Primary (e.g., Top shelf)'
+                                                          : 'Part name'
+                                                      }
                                                     />
                                                   </td>
                                                   <td className="num">
                                                     <NumberInput
-                                                      value={String(part.quantity ?? '')}
+                                                      value={String(
+                                                        part.quantity ?? ''
+                                                      )}
                                                       onChange={(v) =>
                                                         updatePart(
                                                           fridge._id,
@@ -1346,18 +1434,34 @@ function LocationPage() {
                                                           v
                                                         )
                                                       }
-                                                      aria-label={`Quantity for ${part.label || `part ${pidx + 1}`}`}
-                                                      inputMode={isMobile ? 'text' : 'decimal'}
+                                                      aria-label={`Quantity for ${
+                                                        part.label ||
+                                                        `part ${pidx + 1}`
+                                                      }`}
+                                                      inputMode={
+                                                        isMobile
+                                                          ? 'text'
+                                                          : 'decimal'
+                                                      }
                                                       autoComplete="off"
                                                       autoCorrect="off"
                                                       spellCheck={false}
                                                     />
                                                   </td>
-                                                  <td className="num" style={{ textAlign: 'right' }}>
+                                                  <td
+                                                    className="num"
+                                                    style={{
+                                                      textAlign: 'right',
+                                                    }}
+                                                  >
                                                     <button
                                                       className="btn btn--danger"
                                                       onClick={() =>
-                                                        removePartAt(fridge._id, prod.productName, pidx)
+                                                        removePartAt(
+                                                          fridge._id,
+                                                          prod.productName,
+                                                          pidx
+                                                        )
                                                       }
                                                       title="Remove this part"
                                                     >
@@ -1371,7 +1475,12 @@ function LocationPage() {
                                         </div>
                                       )}
 
-                                      <div style={{ marginTop: 8, textAlign: 'right' }}>
+                                      <div
+                                        style={{
+                                          marginTop: 8,
+                                          textAlign: 'right',
+                                        }}
+                                      >
                                         <span className="pill">
                                           Total = <b>{sumParts}</b>
                                         </span>
@@ -1387,22 +1496,25 @@ function LocationPage() {
                   </table>
                 </div>
 
-                <div className="fridge-foot" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={() => handleSaveFridge(fridge)} disabled={disabled}>
-                    {disabled ? 'Saving…' : 'Save changes'}
-                  </button>
-                  {/* NUEVO: botón de impresión por nevera */}
+                <div className="fridge-foot">
                   <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => handlePrintFridge(fridge)}
+                    onClick={() => handleSaveFridge(fridge)}
                     disabled={disabled}
                   >
-                    Print receipt
+                    {disabled ? 'Saving…' : 'Save changes'}
+                  </button>
+                  <button
+                    className="btn btn--secondary"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => handlePrintFridge(fridge)}
+                  >
+                    Print fridge
                   </button>
                 </div>
 
-                {savingFridgeId === fridge._id && <SavingOverlay label={`Saving "${fridge.name}"…`} />}
+                {savingFridgeId === fridge._id && (
+                  <SavingOverlay label={`Saving "${fridge.name}"…`} />
+                )}
               </section>
             );
           })}
