@@ -903,7 +903,7 @@ function LocationPage() {
 
     const doc = new jsPDF({
       unit: 'mm',
-      format: [58, 120], // en vez de 100 de alto
+      format: [58, 100], // en vez de 100 de alto
     });
 
     const left = 4;
