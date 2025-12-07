@@ -892,94 +892,115 @@ function LocationPage() {
       return { name: p.productName, qty };
     });
   };
-  // ======== Ticket PDF por nevera ========
-  const handlePrintFridgePdf = (fridge) => {
-    if (!fridge) return;
+// ======== Ticket PDF por nevera ========
+const handlePrintFridgePdf = (fridge) => {
+  if (!fridge) return;
 
-    const rows = getFridgeTicketRows(fridge);
-    const safeLocation = locationData?.name || 'Location';
-    const modeLabel = viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory';
-    const nowStr = new Date().toLocaleString();
+  const rows = getFridgeTicketRows(fridge);
+  const safeLocation = locationData?.name || 'Location';
+  const modeLabel = viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory';
+  const nowStr = new Date().toLocaleString();
 
-    const doc = new jsPDF({
-      unit: 'mm',
-      format: [58, 120], // en vez de 100 de alto
-    });
+  const doc = new jsPDF({
+    unit: 'mm',
+    format: [58, 120], // ancho x alto
+  });
 
-    const left = 3;
-    let y = 6;
-    const line = 4.5;
-    const maxWidth = 58 - left * 2;
+  const left = 2;                 // margen izquierdo más pequeño
+  const right = 58 - 2;           // margen derecho
+  let y = 6;                      // posición vertical inicial
+  const lineH = 5;                // alto de línea un poco mayor
+  const textArea = (right - left) - 10; // ancho para el nombre dejando ~10mm a la derecha para Qty
+  const maxY = 115;               // límite inferior útil
 
-    doc.setFont('courier', 'normal');
-    doc.setFontSize(12);
+  doc.setFont('courier', 'normal');
 
-    doc.text('Tools Helper per Fridge', 58 / 2, y, { align: 'center' });
-    y += line;
+  // ===== HEADER =====
+  doc.setFontSize(12);
+  doc.text('Tools Helper per Fridge', 58 / 2, y, { align: 'center' });
+  y += lineH;
 
-    doc.setFontSize(12);
-    doc.text(safeLocation, 58 / 2, y, { align: 'center' });
-    y += line;
-    doc.text(`Fridge: ${fridge.name}`, 58 / 2, y, { align: 'center' });
-    y += line;
-    doc.text(modeLabel, 58 / 2, y, { align: 'center' });
-    y += line;
-    doc.text(nowStr, 58 / 2, y, { align: 'center' });
-    y += line;
+  doc.text(safeLocation, 58 / 2, y, { align: 'center' });
+  y += lineH;
 
-    doc.line(left, y, 58 - left, y);
-    y += line;
+  doc.text(`Fridge: ${fridge.name}`, 58 / 2, y, { align: 'center' });
+  y += lineH;
 
-    doc.setFontSize(8);
-    doc.text('Product', left, y);
-    doc.text('Qty', 58 - left, y, { align: 'right' });
-    y += line;
-    doc.line(left, y, 58 - left, y);
-    y += line;
+  doc.text(modeLabel, 58 / 2, y, { align: 'center' });
+  y += lineH;
 
-    rows.forEach((r) => {
+  doc.text(nowStr, 58 / 2, y, { align: 'center' });
+  y += lineH;
+
+  // línea bajo el header
+  doc.setLineWidth(0.25);
+  doc.setDrawColor(0);
+  doc.line(left, y, right, y);
+  y += lineH * 0.7;
+
+  // ===== CABECERA DE TABLA =====
+  doc.setFontSize(12);
+  doc.text('Product', left, y);
+  doc.text('Qty', right, y, { align: 'right' });
+  y += lineH;
+
+  doc.line(left, y, right, y);
+  y += lineH * 0.4;
+
+  // ===== FILAS =====
+  rows.forEach((r) => {
+    if (y > maxY) return;
+
     const name = String(r.name || '');
     const qty = String(r.qty ?? '0');
 
-    const wrapped = doc.splitTextToSize(name, maxWidth - 12);
-    const maxY = 115; // límite inferior útil en una hoja de 120mm
+    // dividir el nombre en varias líneas si es largo
+    const wrapped = doc.splitTextToSize(name, textArea);
 
-    // Escribimos el nombre (puede ocupar varias líneas)
     wrapped.forEach((ln, idx) => {
       if (y > maxY) return;
 
+      // texto del producto
       doc.text(ln, left, y);
 
-      // Cantidad solo en la primera línea
+      // cantidad solo en la primera línea
       if (idx === 0) {
-        doc.text(qty, 58 - left, y, { align: 'right' });
+        doc.text(qty, right, y, { align: 'right' });
       }
 
-      y += line; // avanzamos a la siguiente línea
+      y += lineH;
     });
 
     if (y > maxY) return;
 
-    // Última línea de texto del producto fue en (y - line)
-    const lastBaseline = y - line;
+    // baseline de la última línea de texto del producto
+    const lastBaseline = y - lineH;
 
-    // Dibujamos la línea ~1mm por debajo de esa base
-    const lineY = lastBaseline + 1.0;
+    // línea 1.3mm por debajo de esa base → no toca las letras
+    const lineY = lastBaseline + 1.3;
+    doc.line(left, lineY, right, lineY);
 
-    doc.setLineWidth(0.2);
-    doc.setDrawColor(0); // negro sólido
-    doc.line(left, lineY, 58 - left, lineY);
-
-    // Espacio extra antes del siguiente producto
-    y = lineY + 1.5;
+    // espacio para el siguiente producto
+    y = lineY + 2;
   });
 
-    const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
-    const safeFridgeSlug = String(fridge.name || '').replace(/[^a-z0-9]+/gi, '_');
-    const safeMode = viewMode === MODE_FINAL ? 'final' : 'initial';
+  // (Opcional) recortar alto de la página al contenido usado
+  try {
+    const usedHeight = Math.min(y + 5, 120);
+    if (doc.internal?.pageSize?.setHeight) {
+      doc.internal.pageSize.setHeight(usedHeight);
+    }
+  } catch (e) {
+    // si falla, no pasa nada, se queda en 120mm
+  }
 
-    doc.save(`${safeLocSlug}_${safeFridgeSlug}_${safeMode}.pdf`);
-  };
+  const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
+  const safeFridgeSlug = String(fridge.name || '').replace(/[^a-z0-9]+/gi, '_');
+  const safeMode = viewMode === MODE_FINAL ? 'final' : 'initial';
+
+  doc.save(`${safeLocSlug}_${safeFridgeSlug}_${safeMode}.pdf`);
+};
+
 
 
   const handleSaveFridge = async (fridge) => {
