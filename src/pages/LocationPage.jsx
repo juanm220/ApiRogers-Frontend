@@ -7,6 +7,8 @@ import NumberInput from '../components/NumberInput';
 import '../styles.css';
 import Footer from '../components/Footer';
 import { rememberClosedSession } from '../utils/inventorySessionStorage';
+import jsPDF from 'jspdf';
+
 
 const MODE_INITIAL = 'initial';
 const MODE_FINAL = 'final';
@@ -857,6 +859,107 @@ function LocationPage() {
       });
     }
   };
+  // ======== PRINT BY FRIDGE (inline, sin popup) ========
+   // Construye las filas producto / cantidad de una nevera, usando lo que se ve en pantalla
+  const getFridgeTicketRows = (fridge) => {
+    const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
+    const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
+
+    const products = [...(fridge.products || [])].sort((a, b) => {
+      const ia = orderIndex(a.productName);
+      const ib = orderIndex(b.productName);
+      if (ia !== ib) return ia - ib;
+      return String(a.productName).localeCompare(String(b.productName));
+    });
+
+    return products.map((p) => {
+      const curParts = frParts[p.productName] || [];
+      const sumParts = totalFromParts(curParts);
+      const editVal = frEdits[p.productName];
+
+      let qty;
+      if (curParts.length > 0 && Number.isFinite(sumParts)) {
+        qty = sumParts;
+      } else if (editVal !== undefined && editVal !== null && editVal !== '') {
+        const parsed = parseInt(String(editVal).replace(/\D+/g, ''), 10);
+        qty = Number.isFinite(parsed) ? parsed : 0;
+      } else if (viewMode === MODE_INITIAL) {
+        qty = Number(p.quantity) || 0;
+      } else {
+        qty = 0;
+      }
+
+      return { name: p.productName, qty };
+    });
+  };
+  // ======== Ticket PDF por nevera ========
+  const handlePrintFridgePdf = (fridge) => {
+    if (!fridge) return;
+
+    const rows = getFridgeTicketRows(fridge);
+    const safeLocation = locationData?.name || 'Location';
+    const modeLabel = viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory';
+    const nowStr = new Date().toLocaleString();
+
+    const doc = new jsPDF({
+      unit: 'mm',
+      format: [58, 120], // en vez de 100 de alto
+    });
+
+    const left = 4;
+    let y = 8;
+    const line = 4;
+    const maxWidth = 58 - left * 2;
+
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(9);
+
+    doc.text('Tools Helper per Fridge', 58 / 2, y, { align: 'center' });
+    y += line;
+
+    doc.setFontSize(8);
+    doc.text(safeLocation, 58 / 2, y, { align: 'center' });
+    y += line;
+    doc.text(`Fridge: ${fridge.name}`, 58 / 2, y, { align: 'center' });
+    y += line;
+    doc.text(modeLabel, 58 / 2, y, { align: 'center' });
+    y += line;
+    doc.text(nowStr, 58 / 2, y, { align: 'center' });
+    y += line;
+
+    doc.line(left, y, 58 - left, y);
+    y += line;
+
+    doc.setFontSize(8);
+    doc.text('Product', left, y);
+    doc.text('Qty', 58 - left, y, { align: 'right' });
+    y += line;
+    doc.line(left, y, 58 - left, y);
+    y += line;
+
+    rows.forEach((r) => {
+      const name = String(r.name || '');
+      const qty = String(r.qty ?? '0');
+
+      const wrapped = doc.splitTextToSize(name, maxWidth - 12);
+
+      wrapped.forEach((ln, idx) => {
+        if (y > 95) return;
+        doc.text(ln, left, y);
+        if (idx === 0) {
+          doc.text(qty, 58 - left, y, { align: 'right' });
+        }
+        y += line;
+      });
+    });
+
+    const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
+    const safeFridgeSlug = String(fridge.name || '').replace(/[^a-z0-9]+/gi, '_');
+    const safeMode = viewMode === MODE_FINAL ? 'final' : 'initial';
+
+    doc.save(`${safeLocSlug}_${safeFridgeSlug}_${safeMode}.pdf`);
+  };
+
 
   const handleSaveFridge = async (fridge) => {
     if (debouncers.current[fridge._id]) {
@@ -899,109 +1002,7 @@ function LocationPage() {
     navigate({ search: params.toString() }, { replace: false });
   };
 
- // ======== PRINT BY FRIDGE (inline, sin popup) ========
-const handlePrintFridge = (fridge) => {
-  if (!fridge) return;
-
-  const frEdits = (fridgeEditsByMode[viewMode] || {})[fridge._id] || {};
-  const frParts = (partsEditsByMode[viewMode] || {})[fridge._id] || {};
-
-  // Orden igual que en la tabla
-  const products = [...(fridge.products || [])].sort((a, b) => {
-    const ia = orderIndex(a.productName);
-    const ib = orderIndex(b.productName);
-    if (ia !== ib) return ia - ib;
-    return String(a.productName).localeCompare(String(b.productName));
-  });
-
-  const rows = products.map((p) => {
-    const curParts = frParts[p.productName] || [];
-    const sumParts = totalFromParts(curParts);
-    const editVal = frEdits[p.productName];
-
-    let qty;
-    if (curParts.length > 0 && Number.isFinite(sumParts)) {
-      qty = sumParts;
-    } else if (editVal !== undefined && editVal !== null && editVal !== '') {
-      const parsed = parseInt(String(editVal).replace(/\D+/g, ''), 10);
-      qty = Number.isFinite(parsed) ? parsed : 0;
-    } else if (viewMode === MODE_INITIAL) {
-      qty = Number(p.quantity) || 0;
-    } else {
-      qty = 0; // Final view sin editar
-    }
-
-    return { name: p.productName, qty };
-  });
-
-  const safeLocation = locationData?.name || 'Location';
-  const modeLabel = viewMode === MODE_FINAL ? 'Final inventory' : 'Initial inventory';
-  const nowStr = new Date().toLocaleString();
-
-  const html = `
-    <div>
-      <h2 style="text-align:center;margin:0 0 4px;">Tools Helper per Fridge</h2>
-      <div style="text-align:center;margin-bottom:6px;font-size:11px;">
-        <div><strong>${safeLocation}</strong></div>
-        <div>Fridge: <strong>${fridge.name}</strong></div>
-        <div style="font-size:9px;">${modeLabel}</div>
-        <div style="font-size:9px;">${nowStr}</div>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.3;">
-        <thead>
-          <tr>
-            <th style="text-align:left;border-bottom:1px solid #000;">Product</th>
-            <th style="text-align:right;border-bottom:1px solid #000;">Qty</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows
-            .map(
-              (r) => `
-            <tr>
-              <td>${String(r.name).replace(/</g, '&lt;')}</td>
-              <td style="text-align:right;">${r.qty}</td>
-            </tr>`
-            )
-            .join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-
-  // Contenedor oculto para el ticket
-  const containerId = 'fridge-print-root';
-  let container = document.getElementById(containerId);
-
-  if (!container) {
-    container = document.createElement('div');
-    container.id = containerId;
-    document.body.appendChild(container);
-
-    // Estilos para mostrar SOLO el ticket al imprimir
-    const style = document.createElement('style');
-    style.textContent = `
-      @media print {
-        body * { visibility: hidden; }
-        #${containerId}, #${containerId} * { visibility: visible; }
-        #${containerId} {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          padding: 4mm;
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  container.innerHTML = html;
-
-  // Lanza el diálogo de impresión del navegador (elige tu térmica)
-  window.print();
-};
+ 
 
   if (loading) return <p>Loading location...</p>;
   if (!locationData) return <p>Location not found or error occurred.</p>;
@@ -1470,19 +1471,17 @@ const handlePrintFridge = (fridge) => {
                   </table>
                 </div>
 
-                <div className="fridge-foot">
-                  <button
-                    onClick={() => handleSaveFridge(fridge)}
-                    disabled={disabled}
-                  >
+                <div className="fridge-foot" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => handleSaveFridge(fridge)} disabled={disabled}>
                     {disabled ? 'Saving…' : 'Save changes'}
                   </button>
                   <button
+                    type="button"
                     className="btn btn--secondary"
-                    style={{ marginLeft: 8 }}
-                    onClick={() => handlePrintFridge(fridge)}
+                    onClick={() => handlePrintFridgePdf(fridge)}
+                    disabled={disabled}
                   >
-                    Print fridge
+                    Ticket PDF
                   </button>
                 </div>
 
