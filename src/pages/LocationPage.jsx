@@ -903,21 +903,21 @@ function LocationPage() {
 
     const doc = new jsPDF({
       unit: 'mm',
-      format: [58, 100], // en vez de 100 de alto
+      format: [58, 110], // en vez de 100 de alto
     });
 
-    const left = 4;
+    const left = 2.5;
     let y = 8;
-    const line = 4;
+    const line = 3.2;
     const maxWidth = 58 - left * 2;
 
     doc.setFont('courier', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(11);
 
     doc.text('Tools Helper per Fridge', 58 / 2, y, { align: 'center' });
     y += line;
 
-    doc.setFontSize(8);
+    doc.setFontSize(10);
     doc.text(safeLocation, 58 / 2, y, { align: 'center' });
     y += line;
     doc.text(`Fridge: ${fridge.name}`, 58 / 2, y, { align: 'center' });
@@ -938,20 +938,33 @@ function LocationPage() {
     y += line;
 
     rows.forEach((r) => {
-      const name = String(r.name || '');
-      const qty = String(r.qty ?? '0');
+    const name = String(r.name || '');
+    const qty = String(r.qty ?? '0');
 
-      const wrapped = doc.splitTextToSize(name, maxWidth - 12);
+    const wrapped = doc.splitTextToSize(name, maxWidth - 12);
 
-      wrapped.forEach((ln, idx) => {
-        if (y > 95) return;
-        doc.text(ln, left, y);
-        if (idx === 0) {
-          doc.text(qty, 58 - left, y, { align: 'right' });
-        }
-        y += line;
-      });
+    // Guardamos el inicio de la fila por si luego quieres hacer algo más elaborado
+    const rowStartY = y;
+
+    wrapped.forEach((ln, idx) => {
+      if (y > 106) return; // pequeño margen antes del final del papel
+
+      doc.text(ln, left, y);
+      if (idx === 0) {
+        // La cantidad solo en la primera línea del producto
+        doc.text(qty, 58 - left, y, { align: 'right' });
+      }
+      y += line;
     });
+
+    // Dibuja una línea de separación debajo de la fila
+    const bottomY = y - line / 2; // un pelín por encima del siguiente texto
+    if (bottomY < 108) {
+      doc.setLineWidth(0.1);      // línea finita
+      doc.setDrawColor(180);      // gris suave
+      doc.line(left, bottomY, 58 - left, bottomY);
+    }
+  });
 
     const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
     const safeFridgeSlug = String(fridge.name || '').replace(/[^a-z0-9]+/gi, '_');
