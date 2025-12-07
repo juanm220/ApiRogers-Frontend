@@ -903,21 +903,21 @@ function LocationPage() {
 
     const doc = new jsPDF({
       unit: 'mm',
-      format: [58, 110], // en vez de 100 de alto
+      format: [58, 120], // en vez de 100 de alto
     });
 
-    const left = 2.5;
-    let y = 8;
-    const line = 3.2;
+    const left = 3;
+    let y = 6;
+    const line = 4.5;
     const maxWidth = 58 - left * 2;
 
     doc.setFont('courier', 'normal');
-    doc.setFontSize(11);
+    doc.setFontSize(12);
 
     doc.text('Tools Helper per Fridge', 58 / 2, y, { align: 'center' });
     y += line;
 
-    doc.setFontSize(10);
+    doc.setFontSize(12);
     doc.text(safeLocation, 58 / 2, y, { align: 'center' });
     y += line;
     doc.text(`Fridge: ${fridge.name}`, 58 / 2, y, { align: 'center' });
@@ -943,27 +943,30 @@ function LocationPage() {
 
     const wrapped = doc.splitTextToSize(name, maxWidth - 12);
 
-    // Guardamos el inicio de la fila por si luego quieres hacer algo más elaborado
-    const rowStartY = y;
-
+    // Escribimos el nombre (posible multi-línea)
     wrapped.forEach((ln, idx) => {
-      if (y > 106) return; // pequeño margen antes del final del papel
+      if (y > 112) return; // casi al fondo del papel
 
       doc.text(ln, left, y);
+
+      // Cantidad solo en la primera línea
       if (idx === 0) {
-        // La cantidad solo en la primera línea del producto
         doc.text(qty, 58 - left, y, { align: 'right' });
       }
+
       y += line;
     });
 
-    // Dibuja una línea de separación debajo de la fila
-    const bottomY = y - line / 2; // un pelín por encima del siguiente texto
-    if (bottomY < 108) {
-      doc.setLineWidth(0.1);      // línea finita
-      doc.setDrawColor(180);      // gris suave
-      doc.line(left, bottomY, 58 - left, bottomY);
+    // Línea justo debajo del producto, con un pequeño respiro
+    const sepY = y + 0.5; // un pelín por debajo del último renglón
+    if (sepY < 116) {
+      doc.setLineWidth(0.2);   // más marcada
+      doc.setDrawColor(0);     // negra
+      doc.line(left, sepY, 58 - left, sepY);
     }
+
+    // Dejamos un mini espacio antes del siguiente producto
+    y = sepY + 1;
   });
 
     const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
