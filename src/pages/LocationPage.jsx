@@ -937,7 +937,7 @@ function LocationPage() {
     doc.line(left, y, 58 - left, y);
     y += line;
 
-  rows.forEach((r) => {
+    rows.forEach((r) => {
     const name = String(r.name || '');
     const qty = String(r.qty ?? '0');
 
@@ -960,13 +960,18 @@ function LocationPage() {
 
     if (y > maxY) return;
 
-    // Línea justo debajo del último renglón del producto
+    // Última línea de texto del producto fue en (y - line)
+    const lastBaseline = y - line;
+
+    // Dibujamos la línea ~1mm por debajo de esa base
+    const lineY = lastBaseline + 1.0;
+
     doc.setLineWidth(0.2);
     doc.setDrawColor(0); // negro sólido
-    doc.line(left, y, 58 - left, y);
+    doc.line(left, lineY, 58 - left, lineY);
 
-    // Pequeño espacio antes del siguiente producto
-    y += 0.025;
+    // Espacio extra antes del siguiente producto
+    y = lineY + 1.5;
   });
 
     const safeLocSlug = safeLocation.replace(/[^a-z0-9]+/gi, '_');
