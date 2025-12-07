@@ -977,11 +977,11 @@ const handlePrintFridgePdf = (fridge) => {
     const lastBaseline = y - lineH;
 
     // línea 1.3mm por debajo de esa base → no toca las letras
-    const lineY = lastBaseline + 0.5;
+    const lineY = lastBaseline + 1.5;
     doc.line(left, lineY, right, lineY);
 
     // espacio para el siguiente producto
-    y = lineY + 1.5;
+    y = lineY + 2;
   });
 
   // (Opcional) recortar alto de la página al contenido usado
